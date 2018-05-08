@@ -21,6 +21,8 @@ from math import sqrt
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
+import random as rn
+import os
 matplotlib.rcParams.update({'font.size': 8})
 
 
@@ -151,8 +153,18 @@ print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 # weights = create_weights(train_y)
 
 # load model here if needed
-model = keras.models.load_model("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/keras_models/mmps043.h5",
-                                custom_objects={'pw_rmse':pw_rmse})
+# model = keras.models.load_model("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/keras_models/mmps043.h5",
+#                                 custom_objects={'pw_rmse':pw_rmse})
+
+# set random seeds for model reproducibility as suggested in:
+# https://keras.io/getting-started/faq/#how-can-i-obtain-reproducible-results-using-keras-during-development
+os.environ['PYTHONHASHSEED'] = '0'
+np.random.seed(42)
+rn.seed(12345)
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+tf.set_random_seed(1234)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
 
 # define model
 model = Sequential()
