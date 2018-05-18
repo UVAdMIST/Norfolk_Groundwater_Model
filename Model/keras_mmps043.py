@@ -15,6 +15,7 @@ import keras.backend as K
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
+from keras.layers import GRU
 from keras.layers import Dropout
 from keras.layers import Activation
 from math import sqrt
@@ -168,6 +169,7 @@ K.set_session(sess)
 
 # define model
 model = Sequential()
+# model.add(GRU(units=n_neurons, input_shape=(None, train_X.shape[2])))
 model.add(LSTM(units=n_neurons, input_shape=(None, train_X.shape[2])))
 # model.add(LSTM(units=n_neurons, return_sequences=True, input_shape=(None, train_X.shape[2])))
 # model.add(LSTM(units=n_neurons, return_sequences=True))
@@ -204,6 +206,12 @@ inv_yhat = gwl_scaler.inverse_transform(yhat)
 inv_y = gwl_scaler.inverse_transform(test_y)
 inv_train_y = gwl_scaler.inverse_transform(train_y)
 
+# save test predictions and observed
+inv_yhat_df = DataFrame(inv_yhat)
+inv_yhat_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/predicted.csv")
+inv_y_df = DataFrame(inv_y)
+inv_y_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/observed.csv")
+
 # calculate RMSE for whole test series (each forecast step)
 RMSE_forecast = []
 for i in np.arange(0, n_ahead, 1):
@@ -212,6 +220,7 @@ for i in np.arange(0, n_ahead, 1):
 RMSE_forecast = DataFrame(RMSE_forecast)
 rmse_avg = sqrt(mean_squared_error(inv_y, inv_yhat))
 print('Average Test RMSE: %.3f' % rmse_avg)
+RMSE_forecast.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/RMSE.csv")
 
 # calculate RMSE for each individual time step
 RMSE_timestep = []
@@ -261,7 +270,7 @@ dates_18 = dates_18[5700:]
 dates_18 = dates_18.reset_index(inplace=False)
 dates_18 = dates_18.drop(columns=['index'])
 fig, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True, figsize=(6.5, 3))
-x_ticks = np.arange(0, 1804, 168)
+x_ticks = np.arange(0, 1778, 168)
 ax1.plot(inv_y[5700:, 0], 'k-', label='Obs.')
 ax1.plot(inv_yhat[5700:, 0], 'k:', label='Pred.')
 ax1.set_xticks(x_ticks)
@@ -282,9 +291,74 @@ plt.tight_layout()
 plt.show()
 fig.savefig('C:/Users/Ben Bowes/Documents/HRSD GIS/Presentation Images/Paper Figures/MMPS043_preds.tif', dpi=300)
 
+# create dfs of timestamps, obs, and pred data to find peak values and times
+obs_t1 = np.reshape(inv_y[5700:, 0], (1778, 1))
+pred_t1 = np.reshape(inv_yhat[5700:, 0], (1778,1))
+df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
+df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
+df_t1 = pd.concat([df_t1, dates], axis=1)
+df_t1 = df_t1.set_index("Datetime")
+
+obs_t9 = np.reshape(inv_y[5700:, 8], (1778, 1))
+pred_t9 = np.reshape(inv_yhat[5700:, 8], (1778,1))
+df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
+df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
+df_t9 = pd.concat([df_t9, dates_9], axis=1)
+df_t9 = df_t9.set_index("Datetime")
+
+obs_t18 = np.reshape(inv_y[5700:, 17], (1778, 1))
+pred_t18 = np.reshape(inv_yhat[5700:, 17], (1778,1))
+df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
+df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
+df_t18 = pd.concat([df_t18, dates_18], axis=1)
+df_t18 = df_t18.set_index("Datetime")
+
+HerminePeak_t1 = df_t1.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
+HerminePeak_t1_time = df_t1.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
+JuliaPeak_t1 = df_t1.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
+JuliaPeak_t1_time = df_t1.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].idxmax()
+MatthewPeak_t1 = df_t1.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
+MatthewPeak_t1_time = df_t1.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
+
+HerminePeak_t9 = df_t9.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
+HerminePeak_t9_time = df_t9.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
+JuliaPeak_t9 = df_t9.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
+JuliaPeak_t9_time = df_t9.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].idxmax()
+MatthewPeak_t9 = df_t9.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
+MatthewPeak_t9_time = df_t9.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
+
+HerminePeak_t18 = df_t18.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
+HerminePeak_t18_time = df_t18.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
+JuliaPeak_t18 = df_t18.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
+JuliaPeak_t18_time = df_t18.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].idxmax()
+MatthewPeak_t18 = df_t18.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
+MatthewPeak_t18_time = df_t18.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
+
+peaks_values = DataFrame([HerminePeak_t1, JuliaPeak_t1, MatthewPeak_t1, HerminePeak_t9, JuliaPeak_t9, MatthewPeak_t9,
+                      HerminePeak_t18, JuliaPeak_t18, MatthewPeak_t18])
+
+peaks_values = peaks_values.transpose()
+peaks_values.columns = ['HerminePeak_t1', 'JuliaPeak_t1', 'MatthewPeak_t1', 'HerminePeak_t9', 'JuliaPeak_t9',
+                        'MatthewPeak_t9', 'HerminePeak_t18', 'JuliaPeak_t18', 'MatthewPeak_t18']
+
+peak_times = DataFrame([HerminePeak_t1_time, JuliaPeak_t1_time, MatthewPeak_t1_time, HerminePeak_t9_time,
+                        JuliaPeak_t9_time, MatthewPeak_t9_time, HerminePeak_t18_time, JuliaPeak_t18_time,
+                        MatthewPeak_t18_time])
+
+peak_times = peak_times.transpose()
+peak_times.columns = ['HermineTime_t1', 'JuliaTime_t1', 'MatthewTime_t1', 'HermineTime_t9', 'JuliaTime_t9',
+                      'MatthewTime_t9', 'HermineTime_t18', 'JuliaTime_t18', 'MatthewTime_t18']
+
+peaks_df = pd.concat([peaks_values, peak_times], axis=1)
+cols = ['HerminePeak_t1', 'HermineTime_t1', 'JuliaPeak_t1', 'JuliaTime_t1', 'MatthewPeak_t1', 'MatthewTime_t1',
+        'HerminePeak_t9', 'HermineTime_t9', 'JuliaPeak_t9', 'JuliaTime_t9', 'MatthewPeak_t9', 'MatthewTime_t9',
+        'HerminePeak_t18', 'HermineTime_t18', 'JuliaPeak_t18', 'JuliaTime_t18', 'MatthewPeak_t18', 'MatthewTime_t18']
+peaks_df = peaks_df[cols]
+peaks_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/peaks.csv")
+
 # plot all test predictions
-plt.plot(inv_y[:, 0], label='actual')
-plt.plot(inv_yhat[:, 0], label='predicted')
+plt.plot(inv_y[5700:, 17], label='actual')
+plt.plot(inv_yhat[5700:, 17], label='predicted')
 plt.xlabel("Timestep")
 plt.ylabel("GWL (ft)")
 plt.title("Testing Predictions")
@@ -377,6 +451,7 @@ for i in np.arange(0, inv_yhat.shape[1], 1):
         nse = 1-(numerator/denominator)
     NSE_forecast.append(nse)
 NSE_forecast_df = DataFrame(NSE_forecast)
+NSE_forecast_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/NSE.csv")
 
 # plot NSE vs forecast steps
 plt.plot(NSE_forecast, 'ko')
