@@ -18,6 +18,8 @@ from keras.layers import LSTM
 from keras.layers import GRU
 from keras.layers import Dropout
 from keras.layers import Activation
+from keras.utils import plot_model
+from keras.regularizers import L1L2
 from math import sqrt
 import matplotlib.pyplot as plt
 import matplotlib
@@ -89,15 +91,15 @@ n_lags = 26
 n_ahead = 18
 n_features = 3
 n_train = 49563
-n_test = 7547
-n_epochs = 500
+n_test = 7548
+n_epochs = 10000
 n_neurons = 10
 n_batch = 49563
 
 # load dataset
 dataset_raw = read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/MMPS_043_no_blanks.csv",
                        index_col=None, parse_dates=True, infer_datetime_format=True)
-dataset_raw = dataset_raw[0:len(dataset_raw)-1]
+# dataset_raw = dataset_raw[0:len(dataset_raw)-1]
 
 # split datetime column into train and test for plots
 train_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.Avg']].iloc[:n_train]
@@ -169,20 +171,24 @@ K.set_session(sess)
 
 # define model
 model = Sequential()
-# model.add(GRU(units=n_neurons, input_shape=(None, train_X.shape[2])))
-model.add(LSTM(units=n_neurons, input_shape=(None, train_X.shape[2])))
-# model.add(LSTM(units=n_neurons, return_sequences=True, input_shape=(None, train_X.shape[2])))
-# model.add(LSTM(units=n_neurons, return_sequences=True))
-# model.add(LSTM(units=n_neurons))
+model.add(LSTM(units=n_neurons, input_shape=(None, train_X.shape[2]), use_bias=True,
+               bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
+# model.add(LSTM(units=n_neurons, return_sequences=True, input_shape=(None, train_X.shape[2]), use_bias=True))
+# model.add(LSTM(units=n_neurons, return_sequences=True, use_bias=True))
+# model.add(LSTM(units=n_neurons, use_bias=True))
 model.add(Dropout(.1))
-model.add(Dense(input_dim=n_neurons, activation='linear', units=n_ahead))
+model.add(Dense(activation='linear', units=n_ahead, use_bias=True))  # this is output layer
 # model.add(Activation('linear'))
-model.compile(loss=pw_rmse, optimizer='adam')
+adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+model.compile(loss=rmse, optimizer='adam')
 tbCallBack = keras.callbacks.TensorBoard(log_dir='C:/tmp/tensorflow/keras/logs', histogram_freq=0, write_graph=True,
                                          write_images=False)
-earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.0001, patience=5, verbose=1, mode='auto')
+earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.00000001, patience=5, verbose=1, mode='auto')
 history = model.fit(train_X, train_y, batch_size=n_batch, epochs=n_epochs, verbose=2, shuffle=False,
                     callbacks=[earlystop, tbCallBack])
+
+# visualize model
+# plot_model(model, to_file="C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/model_graph.png")
 
 # save model
 # model.save("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/keras_models/mmps043.h5")
@@ -206,6 +212,18 @@ inv_yhat = gwl_scaler.inverse_transform(yhat)
 inv_y = gwl_scaler.inverse_transform(test_y)
 inv_train_y = gwl_scaler.inverse_transform(train_y)
 
+# save scaled train predictions and observed
+trainPredict_df = DataFrame(trainPredict)
+trainPredict_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/scaled_train_predicted.csv")
+train_y_df = DataFrame(train_y)
+train_y_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/scaled_train_observed.csv")
+
+# save train predictions and observed
+inv_trainPredict_df = DataFrame(inv_trainPredict)
+inv_trainPredict_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/train_predicted.csv")
+inv_train_y_df = DataFrame(inv_train_y)
+inv_train_y_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/train_observed.csv")
+
 # save test predictions and observed
 inv_yhat_df = DataFrame(inv_yhat)
 inv_yhat_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/predicted.csv")
@@ -214,13 +232,18 @@ inv_y_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/o
 
 # calculate RMSE for whole test series (each forecast step)
 RMSE_forecast = []
+MSE_forecast = []
 for i in np.arange(0, n_ahead, 1):
-    rmse = sqrt(mean_squared_error(inv_y[:, i], inv_yhat[:, i]))
+    mse = mean_squared_error(inv_y[:, i], inv_yhat[:, i])
+    rmse = sqrt(mse)
     RMSE_forecast.append(rmse)
+    MSE_forecast.append(mse)
 RMSE_forecast = DataFrame(RMSE_forecast)
+MSE_forecast = DataFrame(MSE_forecast)
 rmse_avg = sqrt(mean_squared_error(inv_y, inv_yhat))
 print('Average Test RMSE: %.3f' % rmse_avg)
 RMSE_forecast.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/RMSE.csv")
+MSE_forecast.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/MSE.csv")
 
 # calculate RMSE for each individual time step
 RMSE_timestep = []
@@ -254,65 +277,72 @@ plt.show()
 dates = DataFrame(test_dates[["Datetime"]][n_lags:-n_ahead+1])
 dates = dates.reset_index(inplace=False)
 dates = dates.drop(columns=['index'])
-dates = dates[5700:]
+dates = dates[:]
 dates = dates.reset_index(inplace=False)
 dates = dates.drop(columns=['index'])
 dates_9 = DataFrame(test_dates[["Datetime"]][n_lags+8:-n_ahead+9])
 dates_9 = dates_9.reset_index(inplace=False)
 dates_9 = dates_9.drop(columns=['index'])
-dates_9 = dates_9[5700:]
+dates_9 = dates_9[:]
 dates_9 = dates_9.reset_index(inplace=False)
 dates_9 = dates_9.drop(columns=['index'])
 dates_18 = DataFrame(test_dates[["Datetime"]][n_lags+17:])
 dates_18 = dates_18.reset_index(inplace=False)
 dates_18 = dates_18.drop(columns=['index'])
-dates_18 = dates_18[5700:]
+dates_18 = dates_18[:]
 dates_18 = dates_18.reset_index(inplace=False)
 dates_18 = dates_18.drop(columns=['index'])
-fig, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True, figsize=(6.5, 3))
-x_ticks = np.arange(0, 1778, 168)
-ax1.plot(inv_y[5700:, 0], 'k-', label='Obs.')
-ax1.plot(inv_yhat[5700:, 0], 'k:', label='Pred.')
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(6, 4))
+x_ticks = np.arange(0, 7505, 720)
+ax1.plot(inv_y[:, 0], '-', label='Obs.')
+ax1.plot(inv_yhat[:, 0], ':', label='Pred.')
 ax1.set_xticks(x_ticks)
-ax1.set_xticklabels(dates['Datetime'][x_ticks].dt.strftime('%Y-%m-%d'), rotation='vertical')
-ax2.plot(inv_y[5700:, 8], 'k-', label='Obs.')
-ax2.plot(inv_yhat[5700:, 8], 'k:', label='Pred.')
+ax1.set_xticklabels(dates['Datetime'][x_ticks].dt.strftime('%m-%d'), rotation='vertical')
+ax2.plot(inv_y[:, 8], '-', label='Obs.')
+ax2.plot(inv_yhat[:, 8], ':', label='Pred.')
 ax2.set_xticks(x_ticks)
-ax2.set_xticklabels(dates_9['Datetime'][x_ticks].dt.strftime('%Y-%m-%d'), rotation='vertical')
-ax3.plot(inv_y[5700:, 17], 'k-', label='Obs.')
-ax3.plot(inv_yhat[5700:, 17], 'k:', label='Pred.')
+ax2.set_xticklabels(dates_9['Datetime'][x_ticks].dt.strftime('%m-%d'), rotation='vertical')
+ax3.plot(inv_y[:, 17], '-', label='Obs.')
+ax3.plot(inv_yhat[:, 17], ':', label='Pred.')
 ax3.set_xticks(x_ticks)
-ax3.set_xticklabels(dates_18['Datetime'][x_ticks].dt.strftime('%Y-%m-%d'), rotation='vertical')
-ax1.set(ylabel="GWL (ft)", title='t+1')
-ax2.set(title='t+9')
-ax3.set(title='t+18')
-plt.legend()
+ax3.set_xticklabels(dates_18['Datetime'][x_ticks].dt.strftime('%m-%d'), rotation='vertical')
+ax1.text(-200, 2.5, 't+1')
+ax2.text(-200, 2.5, 't+9')
+ax3.text(-200, 2.5, 't+18')
+ax2.set(ylabel="GWL (ft)")
+plt.legend(loc=9)
 plt.tight_layout()
 plt.show()
 fig.savefig('C:/Users/Ben Bowes/Documents/HRSD GIS/Presentation Images/Paper Figures/MMPS043_preds.tif', dpi=300)
 
 # create dfs of timestamps, obs, and pred data to find peak values and times
-obs_t1 = np.reshape(inv_y[5700:, 0], (1778, 1))
-pred_t1 = np.reshape(inv_yhat[5700:, 0], (1778,1))
+obs_t1 = np.reshape(inv_y[:, 0], (7505, 1))
+pred_t1 = np.reshape(inv_yhat[:, 0], (7505,1))
 df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
 df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
 df_t1 = pd.concat([df_t1, dates], axis=1)
 df_t1 = df_t1.set_index("Datetime")
 
-obs_t9 = np.reshape(inv_y[5700:, 8], (1778, 1))
-pred_t9 = np.reshape(inv_yhat[5700:, 8], (1778,1))
+obs_t9 = np.reshape(inv_y[:, 8], (7505, 1))
+pred_t9 = np.reshape(inv_yhat[:, 8], (7505,1))
 df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
 df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
 df_t9 = pd.concat([df_t9, dates_9], axis=1)
 df_t9 = df_t9.set_index("Datetime")
 
-obs_t18 = np.reshape(inv_y[5700:, 17], (1778, 1))
-pred_t18 = np.reshape(inv_yhat[5700:, 17], (1778,1))
+obs_t18 = np.reshape(inv_y[:, 17], (7505, 1))
+pred_t18 = np.reshape(inv_yhat[:, 17], (7505,1))
 df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
 df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
 df_t18 = pd.concat([df_t18, dates_18], axis=1)
 df_t18 = df_t18.set_index("Datetime")
 
+Feb5Peak_t1 = df_t1.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].max()
+Feb5Peak_t1_time = df_t1.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].idxmax()
+Jun6Peak_t1 = df_t1.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].max()
+Jun6Peak_t1_time = df_t1.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].idxmax()
+Aug3Peak_t1 = df_t1.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].max()
+Aug3Peak_t1_time = df_t1.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].idxmax()
 HerminePeak_t1 = df_t1.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
 HerminePeak_t1_time = df_t1.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
 JuliaPeak_t1 = df_t1.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
@@ -320,6 +350,12 @@ JuliaPeak_t1_time = df_t1.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:
 MatthewPeak_t1 = df_t1.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
 MatthewPeak_t1_time = df_t1.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
 
+Feb5Peak_t9 = df_t9.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].max()
+Feb5Peak_t9_time = df_t9.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].idxmax()
+Jun6Peak_t9 = df_t9.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].max()
+Jun6Peak_t9_time = df_t9.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].idxmax()
+Aug3Peak_t9 = df_t9.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].max()
+Aug3Peak_t9_time = df_t9.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].idxmax()
 HerminePeak_t9 = df_t9.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
 HerminePeak_t9_time = df_t9.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
 JuliaPeak_t9 = df_t9.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
@@ -327,6 +363,12 @@ JuliaPeak_t9_time = df_t9.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:
 MatthewPeak_t9 = df_t9.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
 MatthewPeak_t9_time = df_t9.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
 
+Feb5Peak_t18 = df_t18.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].max()
+Feb5Peak_t18_time = df_t18.loc["2016-02-02T00:00:00.000000000":"2016-02-08T00:00:00.000000000"].idxmax()
+Jun6Peak_t18 = df_t18.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].max()
+Jun6Peak_t18_time = df_t18.loc["2016-06-05T00:00:00.000000000":"2016-06-12T00:00:00.000000000"].idxmax()
+Aug3Peak_t18 = df_t18.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].max()
+Aug3Peak_t18_time = df_t18.loc["2016-08-01T00:00:00.000000000":"2016-08-08T00:00:00.000000000"].idxmax()
 HerminePeak_t18 = df_t18.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].max()
 HerminePeak_t18_time = df_t18.loc["2016-09-02T00:00:00.000000000":"2016-09-08T00:00:00.000000000"].idxmax()
 JuliaPeak_t18 = df_t18.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:00:00.000000000"].max()
@@ -334,31 +376,40 @@ JuliaPeak_t18_time = df_t18.loc["2016-09-18T00:00:00.000000000":"2016-09-25T00:0
 MatthewPeak_t18 = df_t18.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].max()
 MatthewPeak_t18_time = df_t18.loc["2016-10-07T00:00:00.000000000":"2016-10-14T00:00:00.000000000"].idxmax()
 
-peaks_values = DataFrame([HerminePeak_t1, JuliaPeak_t1, MatthewPeak_t1, HerminePeak_t9, JuliaPeak_t9, MatthewPeak_t9,
-                      HerminePeak_t18, JuliaPeak_t18, MatthewPeak_t18])
+peaks_values = DataFrame([Feb5Peak_t1, Jun6Peak_t1, Aug3Peak_t1, HerminePeak_t1, JuliaPeak_t1, MatthewPeak_t1,
+                          Feb5Peak_t9, Jun6Peak_t9, Aug3Peak_t9, HerminePeak_t9, JuliaPeak_t9, MatthewPeak_t9,
+                          Feb5Peak_t18, Jun6Peak_t18, Aug3Peak_t18, HerminePeak_t18, JuliaPeak_t18, MatthewPeak_t18])
 
 peaks_values = peaks_values.transpose()
-peaks_values.columns = ['HerminePeak_t1', 'JuliaPeak_t1', 'MatthewPeak_t1', 'HerminePeak_t9', 'JuliaPeak_t9',
-                        'MatthewPeak_t9', 'HerminePeak_t18', 'JuliaPeak_t18', 'MatthewPeak_t18']
+peaks_values.columns = ['Feb5Peak_t1', 'Jun6Peak_t1', 'Aug3Peak_t1', 'HerminePeak_t1', 'JuliaPeak_t1', 'MatthewPeak_t1',
+                        'Feb5Peak_t9', 'Jun6Peak_t9', 'Aug3Peak_t9', 'HerminePeak_t9', 'JuliaPeak_t9', 'MatthewPeak_t9',
+                        'Feb5Peak_t18', 'Jun6Peak_t18', 'Aug3Peak_t18', 'HerminePeak_t18', 'JuliaPeak_t18',
+                        'MatthewPeak_t18']
 
-peak_times = DataFrame([HerminePeak_t1_time, JuliaPeak_t1_time, MatthewPeak_t1_time, HerminePeak_t9_time,
-                        JuliaPeak_t9_time, MatthewPeak_t9_time, HerminePeak_t18_time, JuliaPeak_t18_time,
-                        MatthewPeak_t18_time])
+peak_times = DataFrame([Feb5Peak_t1_time, Jun6Peak_t1_time, Aug3Peak_t1_time, HerminePeak_t1_time, JuliaPeak_t1_time,
+                        MatthewPeak_t1_time, Feb5Peak_t9_time, Jun6Peak_t9_time, Aug3Peak_t9_time, HerminePeak_t9_time,
+                        JuliaPeak_t9_time, MatthewPeak_t9_time, Feb5Peak_t18_time, Jun6Peak_t18_time, Aug3Peak_t18_time,
+                        HerminePeak_t18_time, JuliaPeak_t18_time, MatthewPeak_t18_time])
 
 peak_times = peak_times.transpose()
-peak_times.columns = ['HermineTime_t1', 'JuliaTime_t1', 'MatthewTime_t1', 'HermineTime_t9', 'JuliaTime_t9',
-                      'MatthewTime_t9', 'HermineTime_t18', 'JuliaTime_t18', 'MatthewTime_t18']
+peak_times.columns = ['Feb5Time_t1', 'Jun6Time_t1', 'Aug3Time_t1', 'HermineTime_t1', 'JuliaTime_t1', 'MatthewTime_t1',
+                      'Feb5Time_t9', 'Jun6Time_t9', 'Aug3Time_t9', 'HermineTime_t9', 'JuliaTime_t9', 'MatthewTime_t9',
+                      'Feb5Time_t18', 'Jun6Time_t18', 'Aug3Time_t18', 'HermineTime_t18', 'JuliaTime_t18',
+                      'MatthewTime_t18']
 
 peaks_df = pd.concat([peaks_values, peak_times], axis=1)
-cols = ['HerminePeak_t1', 'HermineTime_t1', 'JuliaPeak_t1', 'JuliaTime_t1', 'MatthewPeak_t1', 'MatthewTime_t1',
-        'HerminePeak_t9', 'HermineTime_t9', 'JuliaPeak_t9', 'JuliaTime_t9', 'MatthewPeak_t9', 'MatthewTime_t9',
-        'HerminePeak_t18', 'HermineTime_t18', 'JuliaPeak_t18', 'JuliaTime_t18', 'MatthewPeak_t18', 'MatthewTime_t18']
+cols = ['Feb5Peak_t1', 'Feb5Time_t1', 'Jun6Peak_t1', 'Jun6Time_t1', 'Aug3Peak_t1', 'Aug3Time_t1', 'HerminePeak_t1',
+        'HermineTime_t1', 'JuliaPeak_t1', 'JuliaTime_t1', 'MatthewPeak_t1', 'MatthewTime_t1', 'Feb5Peak_t9',
+        'Feb5Time_t9', 'Jun6Peak_t9', 'Jun6Time_t9', 'Aug3Peak_t9', 'Aug3Time_t9','HerminePeak_t9', 'HermineTime_t9',
+        'JuliaPeak_t9', 'JuliaTime_t9', 'MatthewPeak_t9', 'MatthewTime_t9', 'Feb5Peak_t18', 'Feb5Time_t18',
+        'Jun6Peak_t18', 'Jun6Time_t18', 'Aug3Peak_t18', 'Aug3Time_t18','HerminePeak_t18', 'HermineTime_t18',
+        'JuliaPeak_t18', 'JuliaTime_t18', 'MatthewPeak_t18', 'MatthewTime_t18']
 peaks_df = peaks_df[cols]
 peaks_df.to_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results/peaks.csv")
 
 # plot all test predictions
-plt.plot(inv_y[5700:, 17], label='actual')
-plt.plot(inv_yhat[5700:, 17], label='predicted')
+plt.plot(inv_y[:, 0], label='actual')
+plt.plot(inv_yhat[:, 0], label='predicted')
 plt.xlabel("Timestep")
 plt.ylabel("GWL (ft)")
 plt.title("Testing Predictions")
@@ -381,29 +432,37 @@ plt.show()
 # plt.show()
 
 # combine prediction data with observations
-start_date, stop_date = "2016-09-17 00:00:00", "2016-09-25 00:00:00"
-act_cols, pred_cols = [], []
-for i in range(n_ahead):
-    gwl_name = "Actual t+{0}".format(i)
-    pred_name = 'Predicted t+{0}'.format(i)
-    act_cols.append(gwl_name)
-    pred_cols.append(pred_name)
-df_act = DataFrame(inv_y, columns=act_cols)
-df_pred = DataFrame(inv_yhat, columns=pred_cols)
-df_gwl = pd.concat([df_act, df_pred], axis=1)
-df = pd.concat([test_dates, df_gwl], axis=1)
-df = df[:inv_y.shape[0]]
-df = df.set_index('Datetime')
-storm = df.loc[start_date:stop_date]
+test_dates = test_dates.set_index(pd.DatetimeIndex(test_dates['Datetime']))
+all_data_df_t1 = pd.concat([df_t1, test_dates[['Tide', 'Precip.Avg']][n_lags:-n_ahead+1]], axis=1)
+all_data_df_t1 = all_data_df_t1.rename(columns={'obs': 'Obs. GWL', 'pred': 'Pred. GWL'})
+all_data_df_t9 = pd.concat([df_t9, test_dates[['Tide', 'Precip.Avg']][n_lags+8:-n_ahead+9]], axis=1)
+all_data_df_t9 = all_data_df_t9.rename(columns={'obs': 'Obs. GWL', 'pred': 'Pred. GWL'})
+all_data_df_t18 = pd.concat([df_t18, test_dates[['Tide', 'Precip.Avg']][n_lags+17:]], axis=1)
+all_data_df_t18 = all_data_df_t18.rename(columns={'obs': 'Obs. GWL', 'pred': 'Pred. GWL'})
+# all_data_df_t1 = all_data_df_t1.reset_index()
+# act_cols, pred_cols = [], []
+# for i in range(n_ahead):
+#     gwl_name = "Actual t+{0}".format(i)
+#     pred_name = 'Predicted t+{0}'.format(i)
+#     act_cols.append(gwl_name)
+#     pred_cols.append(pred_name)
+# df_act = DataFrame(inv_y, columns=act_cols)
+# df_pred = DataFrame(inv_yhat, columns=pred_cols)
+# df_gwl = pd.concat([df_act, df_pred], axis=1)
+# df = pd.concat([test_dates, df_gwl], axis=1)
+# df = df[:inv_y.shape[0]]
+# df = df.set_index('Datetime')
+start_date, stop_date = "2016-10-07 00:00:00", "2016-10-12 00:00:00"
+storm = all_data_df_t1.loc[start_date:stop_date]
 storm.reset_index(inplace=True)
 
 # plot test predictions with observed rain and tide
-ax = storm[["Tide", "Actual t+0", "Predicted t+0"]].plot(color=["k"], style=[":", '-', '-.'], legend=None)
+ax = storm[["Tide", "Obs. GWL", "Pred. GWL"]].plot(color=["k"], style=[":", '-', '-.'], legend=None)
 start, end = ax.get_xlim()
 ticks = np.arange(0, end, 24)  # (start,stop,increment)
 ax2 = ax.twinx()
 ax2.set_ylim(ymax=2.5, ymin=0)
-ax.set_ylim(ymax=4, ymin=-1.25)
+ax.set_ylim(ymax=5, ymin=-1.25)
 ax2.invert_yaxis()
 storm["Precip.Avg"].plot.bar(ax=ax2, color="k")
 ax2.set_xticks([])
@@ -417,8 +476,7 @@ ax2.legend(lines + lines2, labels + labels2, loc=1)  # location: 0=best, 9=top c
 plt.tight_layout()
 plt.show()
 # save plot for publication
-# plt.savefig('C:/Users/Ben Bowes/Documents/HRSD GIS/Presentation Images/Plots/Floods_GWL_comparisons/'
-#             '20160919_bw_averaged.png', dpi=300)
+# plt.savefig('C:/Users/Ben Bowes/Documents/HRSD GIS/Presentation Images/Paper Figures/MMPS043_preds_allvars.tif', dpi=300)
 
 # calculate NSE for each forecast period
 NSE_timestep = []
@@ -461,3 +519,14 @@ plt.ylabel("NSE")
 plt.xlabel("Forecast Step")
 plt.tight_layout()
 plt.show()
+
+# # calculate PWRMSE for test set !! this has issues because observed data is negative!!
+# PWRMSE = []
+# for i in np.arange(0, inv_yhat.shape[1], 1):
+#     act_mean = np.mean(inv_y[:, i])
+#     # mean_repeat = np.repeat(act_mean, inv_yhat.shape[0])
+#     weights = np.abs((inv_y[:, i]+act_mean)/(2*act_mean))
+#     pwMSE = np.mean(((inv_y[:, i]-inv_yhat[:, i])**2)*weights)
+#     pwrmse = np.sqrt(pwMSE)
+#     PWRMSE.append(pwrmse)
+# PWRMSE_df = DataFrame(PWRMSE)
