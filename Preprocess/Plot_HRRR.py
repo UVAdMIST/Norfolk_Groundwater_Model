@@ -100,12 +100,9 @@ mmps170_hrrr.columns = col_num
 mmps175_hrrr = pd.read_csv("C:/HRRR/mmps175_hrrr.csv", index_col="Datetime", parse_dates=True, usecols=hrrr_cols)
 mmps175_hrrr.columns = col_num
 
-# obs_list = [mmps043_obs, mmps125_obs, mmps129_obs, mmps153_obs, mmps155_obs, mmps170_obs, mmps175_obs]
-# hrrr_list = [mmps043_hrrr, mmps125_hrrr, mmps129_hrrr, mmps153_hrrr, mmps155_hrrr, mmps170_hrrr, mmps175_hrrr]
-# well_list = ["043", "125", "129", "153", "155", "170", "175"]
-obs_list = [mmps175_obs]
-hrrr_list = [mmps175_hrrr]
-well_list = ["175"]
+obs_list = [mmps043_obs, mmps125_obs, mmps129_obs, mmps153_obs, mmps155_obs, mmps170_obs, mmps175_obs]
+hrrr_list = [mmps043_hrrr, mmps125_hrrr, mmps129_hrrr, mmps153_hrrr, mmps155_hrrr, mmps170_hrrr, mmps175_hrrr]
+well_list = ["043", "125", "129", "153", "155", "170", "175"]
 
 # plot obs vs hrrr for every hour
 for i, j, k in zip(obs_list, hrrr_list, well_list):
