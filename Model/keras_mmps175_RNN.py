@@ -132,31 +132,31 @@ def dtw(series_1, series_2, norm_func=np.linalg.norm):
 
 
 # configure network
-n_lags = 26
+n_lags = 58
 n_ahead = 19
 n_features = 3
-n_train = 53182
-n_test = 17274
+n_train = 56111
+n_test = 17513
 n_epochs = 10000
 n_neurons = 40
-n_batch = 53182
+n_batch = 56111
 
 # set base path to store results
-path = "C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results_18hr_rnn/"
+path = "C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps175_results_rnn/"
 
 # load dataset
-dataset_raw = read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2018/MMPS_043_no_blanks_SI.csv",
+dataset_raw = read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2018/MMPS_175_no_blanks_SI.csv",
                        index_col=None, parse_dates=True, infer_datetime_format=True)
 # dataset_raw = dataset_raw[0:len(dataset_raw)-1]
 
 # split datetime column into train and test for plots
-train_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.Avg']].iloc[:n_train]
-test_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.Avg']].iloc[n_train:]
+train_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[:n_train]
+test_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[n_train:]
 test_dates = test_dates.reset_index(drop=True)
 test_dates['Datetime'] = pd.to_datetime(test_dates['Datetime'])
 
 # drop columns we don't want to predict
-dataset = dataset_raw.drop(dataset_raw.columns[[0, 3, 4, 5, 6]], axis=1)
+dataset = dataset_raw.drop(dataset_raw.columns[[0]], axis=1)
 
 values = dataset.values
 values = values.astype('float32')
@@ -231,12 +231,12 @@ K.set_session(sess)
 # define model
 model = Sequential()
 model.add(SimpleRNN(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
-                    bias_regularizer=L1L2(l1=0.01, l2=0.01), return_sequences=False))
+                    bias_regularizer=L1L2(l1=0.01, l2=0.01), return_sequences=False))  # Fully-connected RNN where the output is to be fed back to input.
 # model.add(SimpleRNN(units=n_neurons, activation='tanh', use_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01),
 #                     return_sequences=True))
 # model.add(SimpleRNN(units=n_neurons, activation='tanh', use_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
-model.add(Dropout(.126))
-model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))
+model.add(Dropout(.104))
+model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))  # this is output layer
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss=rmse, optimizer='adam')
 tbCallBack = keras.callbacks.TensorBoard(log_dir='C:/tmp/tensorflow/keras/logs', histogram_freq=0, write_graph=True,
@@ -330,7 +330,7 @@ plt.title("Training Predictions")
 plt.legend()
 plt.tight_layout()
 # plt.show()
-plt.savefig(path + "MMPS043_train_preds.pdf", dpi=300)
+plt.savefig(path + "MMPS175_train_preds.pdf", dpi=300)
 plt.close()
 
 # plot test predictions for Hermine, Julia, and Matthew
@@ -365,7 +365,7 @@ ax3.set(ylabel="GWL (m)")
 plt.legend(loc=9)
 plt.tight_layout()
 # plt.show()
-fig.savefig(path + "MMPS043_forecast_preds.pdf", dpi=300)
+fig.savefig(path + "MMPS175_forecast_preds.pdf", dpi=300)
 plt.close()
 
 # create dfs of timestamps, obs, and pred data to find peak values and times
@@ -404,7 +404,7 @@ plt.title("Testing Predictions")
 plt.legend()
 plt.tight_layout()
 # plt.show()
-plt.savefig(path + "MMPS043_alltest_preds.pdf", dpi=300)
+plt.savefig(path + "MMPS175_alltest_preds.pdf", dpi=300)
 plt.close()
 
 # # plot test predictions, 18 hours from specific period
@@ -511,7 +511,7 @@ for storm in storms:
         ax2.set_ylim(ymax=60, ymin=0)
         ax.set_ylim(ymax=2, ymin=-0.5)
         ax2.invert_yaxis()
-        storm["Precip.Avg"].plot.bar(ax=ax2, color="k")
+        storm["Precip."].plot.bar(ax=ax2, color="k")
         ax2.set_xticks([])
         ax.set_xticks(ticks)
         ax.set_xticklabels(storm.loc[ticks, 'Datetime'].dt.strftime('%Y-%m-%d'), rotation='vertical')

@@ -1,6 +1,6 @@
 """
 This network uses the last 26 observations of gwl, tide, and rain to predict the next 18
-values of gwl for well MMPS-043. Hyperparameters were chosen using the keras_mmps043_18hr_hyperas.py script
+values of gwl for well MMPS-043
 """
 
 import pandas as pd
@@ -62,8 +62,8 @@ def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):
 #
 # def sq_err(y_true, y_pred):
 #     return K.square(y_pred - y_true)
-
-
+#
+#
 def mse(y_true, y_pred):
     return K.mean(K.square(y_pred - y_true), axis=-1)
 
@@ -138,11 +138,11 @@ n_features = 3
 n_train = 53182
 n_test = 17274
 n_epochs = 10000
-n_neurons = 40
+n_neurons = 75
 n_batch = 53182
 
 # set base path to store results
-path = "C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results_18hr_rnn/"
+path = "C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_results_18hr/"
 
 # load dataset
 dataset_raw = read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2018/MMPS_043_no_blanks_SI.csv",
@@ -230,13 +230,16 @@ K.set_session(sess)
 
 # define model
 model = Sequential()
-model.add(SimpleRNN(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
-                    bias_regularizer=L1L2(l1=0.01, l2=0.01), return_sequences=False))
-# model.add(SimpleRNN(units=n_neurons, activation='tanh', use_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01),
-#                     return_sequences=True))
+model.add(LSTM(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
+               bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
+# model.add(LSTM(units=n_neurons, return_sequences=True, input_shape=(None, train_X.shape[2]), use_bias=True,
+#                bias_regularizer=L1L2(l1=0.01, l2=0.01)))
 # model.add(SimpleRNN(units=n_neurons, activation='tanh', use_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
-model.add(Dropout(.126))
-model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))
+# model.add(LSTM(units=n_neurons, return_sequences=True, use_bias=True,
+#                bias_regularizer=L1L2(l1=0.01, l2=0.01)))
+# model.add(LSTM(units=n_neurons, use_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
+model.add(Dropout(.355))
+model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))  # this is output layer
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss=rmse, optimizer='adam')
 tbCallBack = keras.callbacks.TensorBoard(log_dir='C:/tmp/tensorflow/keras/logs', histogram_freq=0, write_graph=True,
@@ -370,7 +373,7 @@ plt.close()
 
 # create dfs of timestamps, obs, and pred data to find peak values and times
 obs_t1 = np.reshape(inv_y[:, 0], (inv_y.shape[0], 1))
-pred_t1 = np.reshape(inv_yhat[:, 0], (inv_y.shape[0], 1))
+pred_t1 = np.reshape(inv_yhat[:, 0], (inv_y.shape[0],1))
 df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
 df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
 df_t1 = pd.concat([df_t1, dates], axis=1)
@@ -378,7 +381,7 @@ df_t1 = df_t1.set_index("Datetime")
 df_t1 = df_t1.rename(columns={'obs': 'Obs. GWL t+1', 'pred': 'Pred. GWL t+1'})
 
 obs_t9 = np.reshape(inv_y[:, 8], (inv_y.shape[0], 1))
-pred_t9 = np.reshape(inv_yhat[:, 8], (inv_y.shape[0], 1))
+pred_t9 = np.reshape(inv_yhat[:, 8], (inv_y.shape[0],1))
 df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
 df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
 df_t9 = pd.concat([df_t9, dates_9], axis=1)
@@ -386,7 +389,7 @@ df_t9 = df_t9.set_index("Datetime")
 df_t9 = df_t9.rename(columns={'obs': 'Obs. GWL t+9', 'pred': 'Pred. GWL t+9'})
 
 obs_t18 = np.reshape(inv_y[:, 17], (inv_y.shape[0], 1))
-pred_t18 = np.reshape(inv_yhat[:, 17], (inv_y.shape[0], 1))
+pred_t18 = np.reshape(inv_yhat[:, 17], (inv_y.shape[0],1))
 df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
 df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
 df_t18 = pd.concat([df_t18, dates_18], axis=1)
@@ -423,7 +426,6 @@ plt.close()
 test_dates = test_dates.set_index(pd.DatetimeIndex(test_dates['Datetime']))
 all_data_df = pd.concat([test_dates, df_t1[['Pred. GWL t+1']], df_t9[['Pred. GWL t+9']], df_t18[['Pred. GWL t+18']]],
                         axis=1)
-
 all_data_df.to_csv(path + "all_data_df.csv")
 
 #create storm dfs
@@ -511,7 +513,7 @@ for storm in storms:
         ax2.set_ylim(ymax=60, ymin=0)
         ax.set_ylim(ymax=2, ymin=-0.5)
         ax2.invert_yaxis()
-        storm["Precip.Avg"].plot.bar(ax=ax2, color="k")
+        storm["Precip.Avg"].plot.bar(ax=ax2, color="k", label="Precip.")
         ax2.set_xticks([])
         ax.set_xticks(ticks)
         ax.set_xticklabels(storm.loc[ticks, 'Datetime'].dt.strftime('%Y-%m-%d'), rotation='vertical')
