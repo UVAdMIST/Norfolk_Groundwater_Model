@@ -1,25 +1,53 @@
 """
 This script finds the start and end points of spikes in GWL for a single well's data.
 The start and end points are used to create a new data frame of data that only includes the storm periods.
+The lag for each well is:
+
+MMPS    Lag
+043     26
+125     26
+129     59
+153     25
+155     28
+170     48
+175     58
 """
 
 import pandas as pd
 import numpy as np
+import random
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from scipy.signal import argrelmax, find_peaks
 from scipy.ndimage.filters import gaussian_filter1d
-from sklearn.metrics import mean_squared_error
-from math import sqrt
+
+# indicate which well to use
+well = "175"
 
 # lag and forecast values
-n_lag = 26
+if well == "043":
+    n_lag = 26
+if well == "125":
+    n_lag = 26
+if well == "129":
+    n_lag = 59
+if well == "153":
+    n_lag = 25
+if well == "155":
+    n_lag = 28
+if well == "170":
+    n_lag = 48
+if well == "175":
+    n_lag = 58
 n_ahead = 19
+
+print("lag is:", n_lag, "for well:", well)
 
 # load dataset
 data_path = "C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2018/"
+bs_path = "C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps" + well + "_bootstraps_storms/"
 
-dataset = pd.read_csv(data_path + "MMPS_043_no_blanks_SI.csv", index_col=None, parse_dates=True,
+dataset = pd.read_csv(data_path + "MMPS_" + well + "_no_blanks_SI.csv", index_col=None, parse_dates=True,
                       infer_datetime_format=True)
 
 gwl_test = np.asarray(dataset["GWL"], dtype='float64')
@@ -73,6 +101,9 @@ found_peaks = find_peaks(gwl_test, prominence=0.05, distance=50)
 
 # find indices where first derivative == 0
 first_dev_zeros = np.where(first_dev == 0)
+first_dev_zeros = first_dev_zeros[0]
+if well == "175":
+    first_dev_zeros = np.insert(first_dev_zeros, 0, 33)  # MMPS-175, add 33 to beginning because there was no start
 
 # find location of max first derivative
 found_first_dev = find_peaks(first_dev_smoothed, height=0.001)
@@ -86,11 +117,13 @@ end_list = []
 for i in found_first_dev[0]:
     min_list = []
     max_list = []
-    for j in first_dev_zeros[0]:
+    for j in first_dev_zeros:
         if i < j:
             min_list.append(j)
+            # print("appended", j, "to min_list")
         if i > j:
             max_list.append(j)
+            # print("appended", j, "to max_list")
         else:
             continue
     end_list.append(min(min_list))
@@ -141,6 +174,21 @@ for i, j in zip(final_start, final_peak):
 
 storms_df = pd.concat(df_list).drop_duplicates().reset_index(drop=True)
 
+# shuffle dfs in df_list to create 1000 bootstrap replicates
+count = 0
+while count <= 1000:
+    if count == 0:
+        bs_df = pd.concat(df_list).drop_duplicates().reset_index(drop=True)
+        bs_df.to_csv(bs_path + "bs0.csv", index=False)
+    if count >= 1:
+        if count % 25 == 0:
+            print(count)
+        df_list2 = df_list
+        bs_df_list = random.choices(df_list2, k=len(df_list))  # this samples df_list with replacement
+        bs_df = pd.concat(bs_df_list).reset_index(drop=True)
+        bs_df.to_csv(bs_path + "bs" + str(count) + ".csv", index=False)
+    count += 1
+
 # plot observed gwl with start, end, and max f' points
 fig, ax = plt.subplots()
 ax.set_xlabel('Time Index')
@@ -152,11 +200,11 @@ ax.scatter(final_peak, gwl_test[final_peak], marker='P', color='k', label='Peak'
 # ax.scatter(start_list, gwl_test[start_list], marker='x', color='red', label='Start')
 # ax.scatter(end_list, gwl_test[end_list], marker='^', color='green', label='End')
 # ax.scatter(found_peaks[0], gwl_test[found_peaks[0]], marker='P', color='k', label='Peak')
-# ax.scatter(found_second_dev, gwl_test[found_second_dev], marker='*', color='purple', label='second_dev')
+# ax.scatter(first_dev_zeros, gwl_test[first_dev_zeros], marker='*', color='purple', label='first_dev_zeros')
 # ax.scatter(max_idx, gwl_test[max_idx], marker='p', color='orange', label='max_idx')
 # ax.scatter(found_peaks[0], gwl_test[found_peaks[0]], marker='P', color='k', label='found_peaks')
 plt.legend()
 plt.tight_layout()
 plt.show()
 
-storms_df.to_csv(data_path + "MMPS_043_no_blanks_SI_storms.csv", index=False)
+storms_df.to_csv(data_path + "MMPS_" + well + "_no_blanks_SI_storms.csv", index=False)
