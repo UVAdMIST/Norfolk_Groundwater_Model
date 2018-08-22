@@ -167,12 +167,19 @@ for i, j in zip(filtered_start, filtered_peak):
 
 # save dates of start and end lists
 df_list = []
+df_len_list = []
 for i, j in zip(final_start, final_peak):
     print(i, j)
     df = dataset.iloc[i:j+1]
+    df_len = len(df)
     df_list.append(df)
+    df_len_list.append(df_len)
 
 storms_df = pd.concat(df_list).drop_duplicates().reset_index(drop=True)
+
+# get average length of storms
+storm_avg = round(sum(df_len_list)/len(df_len_list))
+print("Average len of storms for well", well, "is: ", storm_avg)
 
 # shuffle dfs in df_list to create 1000 bootstrap replicates
 count = 0
