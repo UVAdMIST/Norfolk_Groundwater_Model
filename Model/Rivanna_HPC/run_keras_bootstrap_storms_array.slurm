@@ -11,9 +11,9 @@
 module purge
 module load singularity tensorflow/1.6.0-py36
 
-inputdir=/scratch/$USER/mmps125_bootstraps
+inputdir=/scratch/$USER/mmps043_bootstraps_storms
 # single output dir for all tasks in this array
-outputdir=/scratch/$USER/mmps125_results_full_bootstrap_rnn-$SLURM_ARRAY_JOB_ID
+outputdir=/scratch/$USER/mmps043_results_storm_bootstrap_rnn-$SLURM_ARRAY_JOB_ID
 mkdir -p $outputdir
 
 # get all files
@@ -26,6 +26,6 @@ while [[ $fileindex -lt ${#allfiles[@]} ]]; do
     # pass the csv file to be processed as first argument
     file=${allfiles[fileindex]}
     echo "processing file # $fileindex: $file, writing to $outputdir"
-    singularity-gpu exec /scratch/$USER/tensorflow-1.6.0-py36.simg python /scratch/$USER/keras_mmps125_fullBS_rnn_rivanna.py "$file" "$outputdir" #$count
+    singularity-gpu exec /scratch/$USER/tensorflow-1.6.0-py36.simg python /scratch/$USER/keras_mmps043_stormBS_rnn_rivanna.py "$file" "$outputdir" #$count
     fileindex=$((fileindex + $SLURM_ARRAY_TASK_COUNT))
 done
