@@ -1,5 +1,5 @@
 """
-Model: LSTM
+Model: RNN
 Data: full data set, bootstrapped
 Run from shell script
 This network uses the last 26 observations of gwl, tide, and rain to predict the next 18
@@ -14,7 +14,7 @@ import tensorflow as tf
 import keras
 import keras.backend as K
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, CuDNNLSTM
+from keras.layers import Dense, SimpleRNN, Dropout
 from keras.regularizers import L1L2
 from math import sqrt
 import numpy as np
@@ -58,17 +58,8 @@ path = sys.argv[2]
 
 # load dataset
 dataset = read_csv(sys.argv[1])
-# dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps/bs1.csv")
+# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps/bs1.csv")
 dataset = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']]
-    
-# text_file = open("/scratch/bdb3m/test_out.txt", "w")
-# text_file.write("path\n")
-# text_file.write(path)
-# text_file.write("file\n")
-# text_file.write(sys.argv[1])
-# text_file.write("file_num\n")
-# text_file.write(file_num)
-# text_file.close()
 
 # load storm dataset to get indices for calculating performance on storms
 storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms/bs0.csv",
@@ -82,7 +73,7 @@ n_features = 3
 n_train = round(len(dataset)*0.7)
 n_test = len(dataset)-n_train
 n_epochs = 10000
-n_neurons = 75
+n_neurons = 40
 n_batch = n_train
 
 # split datetime column into train and test for plots
@@ -144,17 +135,15 @@ K.set_session(sess)
 
 # define model
 model = Sequential()
-model.add(CuDNNLSTM(units=n_neurons, unit_forget_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
-# model.add(LSTM(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
-#               bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
-model.add(Dropout(.355))
-model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))  # this is output layer
+model.add(SimpleRNN(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
+                    bias_regularizer=L1L2(l1=0.01, l2=0.01), return_sequences=False))
+model.add(Dropout(.126))
+model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss=rmse, optimizer=adam)
 earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.00000001, patience=5, verbose=1, mode='auto')
 history = model.fit(train_X, train_y, batch_size=n_batch, epochs=n_epochs, verbose=2, shuffle=False,
                     callbacks=[earlystop])
-
 # make predictions
 trainPredict = model.predict(train_X)
 yhat = model.predict(test_X)

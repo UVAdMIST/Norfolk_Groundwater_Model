@@ -2,8 +2,8 @@
 Model: LSTM
 Data: full data set, bootstrapped
 Run from shell script
-This network uses the last 26 observations of gwl, tide, and rain to predict the next 18
-values of gwl for well MMPS-043
+This network uses the last 28 observations of gwl, tide, and rain to predict the next 18
+values of gwl for well MMPS-155
 """
 
 import pandas as pd
@@ -58,31 +58,22 @@ path = sys.argv[2]
 
 # load dataset
 dataset = read_csv(sys.argv[1])
-# dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps/bs1.csv")
+# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps/bs1.csv")
 dataset = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']]
-    
-# text_file = open("/scratch/bdb3m/test_out.txt", "w")
-# text_file.write("path\n")
-# text_file.write(path)
-# text_file.write("file\n")
-# text_file.write(sys.argv[1])
-# text_file.write("file_num\n")
-# text_file.write(file_num)
-# text_file.close()
 
 # load storm dataset to get indices for calculating performance on storms
-storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms/bs0.csv",
+storm_dataset = read_csv("/scratch/bdb3m/mmps155_bootstraps_storms/bs0.csv",
                          index_col="Datetime", parse_dates=True, infer_datetime_format=True,
                          usecols=["Datetime", "GWL"])
 
 # configure network
-n_lags = 26
+n_lags = 28
 n_ahead = 19
 n_features = 3
 n_train = round(len(dataset)*0.7)
 n_test = len(dataset)-n_train
 n_epochs = 10000
-n_neurons = 75
+n_neurons = 50
 n_batch = n_train
 
 # split datetime column into train and test for plots
@@ -108,6 +99,8 @@ gwl_scaler, tide_scaler, rain_scaler = MinMaxScaler(), MinMaxScaler(), MinMaxSca
 gwl_scaled = gwl_scaler.fit_transform(gwl)
 tide_scaled = tide_scaler.fit_transform(tide)
 rain_scaled = rain_scaler.fit_transform(rain)
+
+# scaled = np.concatenate((gwl_scaled, tide_scaled, rain_scaled), axis=1)
 
 # frame as supervised learning
 gwl_super = series_to_supervised(gwl_scaled, n_lags, n_ahead)
@@ -146,8 +139,8 @@ K.set_session(sess)
 model = Sequential()
 model.add(CuDNNLSTM(units=n_neurons, unit_forget_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
 # model.add(LSTM(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
-#               bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
-model.add(Dropout(.355))
+#                bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
+model.add(Dropout(.103))
 model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))  # this is output layer
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss=rmse, optimizer=adam)

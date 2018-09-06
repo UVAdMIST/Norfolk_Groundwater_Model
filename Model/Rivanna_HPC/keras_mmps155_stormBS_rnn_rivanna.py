@@ -1,9 +1,9 @@
 """
-Model: LSTM
-Data: full data set, bootstrapped
+Model: RNN
+Data: storm data set, bootstrapped
 Run from shell script
-This network uses the last 26 observations of gwl, tide, and rain to predict the next 18
-values of gwl for well MMPS-043
+This network uses the last 28 observations of gwl, tide, and rain to predict the next 18
+values of gwl for well MMPS-155
 """
 
 import pandas as pd
@@ -14,7 +14,7 @@ import tensorflow as tf
 import keras
 import keras.backend as K
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, CuDNNLSTM
+from keras.layers import Dense, SimpleRNN, Dropout
 from keras.regularizers import L1L2
 from math import sqrt
 import numpy as np
@@ -57,26 +57,12 @@ file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
 path = sys.argv[2]
 
 # load dataset
-dataset = read_csv(sys.argv[1])
-# dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps/bs1.csv")
-dataset = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']]
-    
-# text_file = open("/scratch/bdb3m/test_out.txt", "w")
-# text_file.write("path\n")
-# text_file.write(path)
-# text_file.write("file\n")
-# text_file.write(sys.argv[1])
-# text_file.write("file_num\n")
-# text_file.write(file_num)
-# text_file.close()
-
-# load storm dataset to get indices for calculating performance on storms
-storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms/bs0.csv",
-                         index_col="Datetime", parse_dates=True, infer_datetime_format=True,
-                         usecols=["Datetime", "GWL"])
+dataset_raw = read_csv(sys.argv[1])
+# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps/bs1.csv")
+dataset = dataset_raw.drop(dataset_raw.columns[[0, 3, 4]], axis=1)
 
 # configure network
-n_lags = 26
+n_lags = 28
 n_ahead = 19
 n_features = 3
 n_train = round(len(dataset)*0.7)
@@ -86,12 +72,12 @@ n_neurons = 75
 n_batch = n_train
 
 # split datetime column into train and test for plots
-train_dates = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[:n_train]
-test_dates = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[n_train:]
+train_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.Avg']].iloc[:n_train]
+test_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.Avg']].iloc[n_train:]
 test_dates = test_dates.reset_index(drop=True)
 test_dates['Datetime'] = pd.to_datetime(test_dates['Datetime'])
 
-values = dataset[['GWL', 'Tide', 'Precip.']].values
+values = dataset[['GWL', 'Tide', 'Precip.Avg']].values
 values = values.astype('float32')
 
 gwl = values[:, 0]
@@ -108,6 +94,8 @@ gwl_scaler, tide_scaler, rain_scaler = MinMaxScaler(), MinMaxScaler(), MinMaxSca
 gwl_scaled = gwl_scaler.fit_transform(gwl)
 tide_scaled = tide_scaler.fit_transform(tide)
 rain_scaled = rain_scaler.fit_transform(rain)
+
+# scaled = np.concatenate((gwl_scaled, tide_scaled, rain_scaled), axis=1)
 
 # frame as supervised learning
 gwl_super = series_to_supervised(gwl_scaled, n_lags, n_ahead)
@@ -144,11 +132,10 @@ K.set_session(sess)
 
 # define model
 model = Sequential()
-model.add(CuDNNLSTM(units=n_neurons, unit_forget_bias=True, bias_regularizer=L1L2(l1=0.01, l2=0.01)))
-# model.add(LSTM(units=n_neurons, activation='tanh', input_shape=(None, train_X.shape[2]), use_bias=True,
-#               bias_regularizer=L1L2(l1=0.01, l2=0.01)))  # This is hidden layer
-model.add(Dropout(.355))
-model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))  # this is output layer
+model.add(SimpleRNN(units=n_neurons, activation='relu', input_shape=(None, train_X.shape[2]), use_bias=True,
+                    bias_regularizer=L1L2(l1=0.01, l2=0.01), return_sequences=False))
+model.add(Dropout(.127))
+model.add(Dense(activation='linear', units=n_ahead-1, use_bias=True))
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss=rmse, optimizer=adam)
 earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.00000001, patience=5, verbose=1, mode='auto')
@@ -230,48 +217,6 @@ df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
 df_t18 = pd.concat([df_t18, dates_18], axis=1)
 df_t18 = df_t18.set_index("Datetime")
 df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
-
-# extract storm dates from testset
-df_t1_storms = np.asarray(df_t1[~df_t1.index.isin(storm_dataset.index)])
-df_t9_storms = np.asarray(df_t9[~df_t9.index.isin(storm_dataset.index)])
-df_t18_storms = np.asarray(df_t18[~df_t18.index.isin(storm_dataset.index)])
-
-storms_list = [df_t1_storms, df_t9_storms, df_t18_storms]
-
-# calculate storm RMSE
-RMSE_storms = []
-for j in storms_list:
-    # print(j[:, 0])
-    mse = mean_squared_error(j[:, 0], j[:, 1])
-    single_rmse = sqrt(mse)
-    RMSE_storms.append(single_rmse)
-RMSE_storms = DataFrame(RMSE_storms)
-RMSE_storms.to_csv(os.path.join(path, file_num + "_RMSE_storms.csv"))
-
-# calculate storm NSE
-NSE_storms = []
-for j in storms_list:
-    num_diff = np.subtract(j[:, 0], j[:, 1])
-    num_sq = np.square(num_diff)
-    numerator = sum(num_sq)
-    denom_diff = np.subtract(j[:, 0], np.mean(j[:, 0]))
-    denom_sq = np.square(denom_diff)
-    denominator = sum(denom_sq)
-    if denominator == 0:
-        nse = 'NaN'
-    else:
-        nse = 1 - (numerator / denominator)
-    NSE_storms.append(nse)
-NSE_storms = DataFrame(NSE_storms)
-NSE_storms.to_csv(os.path.join(path, file_num + "_NSE_storms.csv"))
-
-# calculate storm MAE
-MAE_storms = []
-for j in storms_list:
-    mae = np.sum(np.abs(np.subtract(j[:, 0], j[:, 1]))) / j.shape[0]
-    MAE_storms.append(mae)
-MAE_storms = DataFrame(MAE_storms)
-MAE_storms.to_csv(os.path.join(path, file_num + "_MAE_storms.csv"))
 
 # combine prediction data with observations
 if file_num == "bs0":
