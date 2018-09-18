@@ -58,22 +58,13 @@ path = sys.argv[2]
 
 # load dataset
 dataset = read_csv(sys.argv[1])
-# dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps/bs1.csv")
+# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps/bs0.csv")
 dataset = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']]
-    
-# text_file = open("/scratch/bdb3m/test_out.txt", "w")
-# text_file.write("path\n")
-# text_file.write(path)
-# text_file.write("file\n")
-# text_file.write(sys.argv[1])
-# text_file.write("file_num\n")
-# text_file.write(file_num)
-# text_file.close()
 
 # load storm dataset to get indices for calculating performance on storms
-storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms/bs0.csv",
+storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms_fixed/bs0.csv",
                          index_col="Datetime", parse_dates=True, infer_datetime_format=True,
-                         usecols=["Datetime", "GWL"])
+                         usecols=['Datetime', 'gwl(t+1)', 'gwl(t+9)', 'gwl(t+18)'])
 
 # configure network
 n_lags = 26
@@ -232,9 +223,18 @@ df_t18 = df_t18.set_index("Datetime")
 df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
 
 # extract storm dates from testset
-df_t1_storms = np.asarray(df_t1[~df_t1.index.isin(storm_dataset.index)])
-df_t9_storms = np.asarray(df_t9[~df_t9.index.isin(storm_dataset.index)])
-df_t18_storms = np.asarray(df_t18[~df_t18.index.isin(storm_dataset.index)])
+storm_dates_t1 = storm_dataset[['gwl(t+1)']]
+storm_dates_t1.index = storm_dates_t1.index + pd.DateOffset(hours=1)
+
+storm_dates_t9 = storm_dataset[['gwl(t+9)']]
+storm_dates_t9.index = storm_dates_t9.index + pd.DateOffset(hours=9)
+
+storm_dates_t18 = storm_dataset[['gwl(t+18)']]
+storm_dates_t18.index = storm_dates_t18.index + pd.DateOffset(hours=18)
+
+df_t1_storms = np.asarray(df_t1[df_t1.index.isin(storm_dates_t1.index)])
+df_t9_storms = np.asarray(df_t9[df_t9.index.isin(storm_dates_t9.index)])
+df_t18_storms = np.asarray(df_t18[df_t18.index.isin(storm_dates_t18.index)])
 
 storms_list = [df_t1_storms, df_t9_storms, df_t18_storms]
 

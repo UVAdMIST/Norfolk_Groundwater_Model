@@ -57,9 +57,10 @@ file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
 path = sys.argv[2]
 
 # load dataset
-dataset_raw = read_csv(sys.argv[1])
-# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps/bs1.csv")
-dataset = dataset_raw.drop(dataset_raw.columns[[0]], axis=1)
+dataset = read_csv(sys.argv[1])
+# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps_storms_fixed/bs0.csv")
+full_dataset = read_csv("/scratch/bdb3m/mmps170_bootstraps/bs0.csv", usecols=["Datetime", 'GWL', 'Tide', 'Precip.'])
+# dataset = dataset_raw.drop(dataset_raw.columns[[0]], axis=1)
 
 # configure network
 n_lags = 48
@@ -71,13 +72,7 @@ n_epochs = 10000
 n_neurons = 75
 n_batch = n_train
 
-# split datetime column into train and test for plots
-train_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[:n_train]
-test_dates = dataset_raw[['Datetime', 'GWL', 'Tide', 'Precip.']].iloc[n_train:]
-test_dates = test_dates.reset_index(drop=True)
-test_dates['Datetime'] = pd.to_datetime(test_dates['Datetime'])
-
-values = dataset[['GWL', 'Tide', 'Precip.']].values
+values = full_dataset[['GWL', 'Tide', 'Precip.']].values
 values = values.astype('float32')
 
 gwl = values[:, 0]
@@ -91,29 +86,36 @@ rain = rain.reshape(rain.shape[0], 1)
 
 # normalize features with individual scalers
 gwl_scaler, tide_scaler, rain_scaler = MinMaxScaler(), MinMaxScaler(), MinMaxScaler()
-gwl_scaled = gwl_scaler.fit_transform(gwl)
-tide_scaled = tide_scaler.fit_transform(tide)
-rain_scaled = rain_scaler.fit_transform(rain)
+gwl_fit = gwl_scaler.fit(gwl)  # Compute the minimum and maximum gwl to be used for later scaling
+tide_fit = tide_scaler.fit(tide)
+rain_fit = rain_scaler.fit(rain)
 
-# scaled = np.concatenate((gwl_scaled, tide_scaled, rain_scaled), axis=1)
+# separate storm data into gwl, tide, and rain
+storm_scaled = pd.DataFrame(dataset["Datetime"])
+for col in dataset.columns:
+    if col.split("(")[0] == "tide":
+        col_data = np.asarray(dataset[col])
+        col_data = col_data.reshape(col_data.shape[0], 1)
+        col_scaled = tide_fit.transform(col_data)
+        storm_scaled[col] = col_scaled
+    if col.split("(")[0] == "rain":
+        col_data = np.asarray(dataset[col])
+        col_data = col_data.reshape(col_data.shape[0], 1)
+        col_scaled = rain_fit.transform(col_data)
+        storm_scaled[col] = col_scaled
+    if col.split("(")[0] == "gwl":
+        col_data = np.asarray(dataset[col])
+        col_data = col_data.reshape(col_data.shape[0], 1)
+        col_scaled = gwl_fit.transform(col_data)
+        storm_scaled[col] = col_scaled
 
-# frame as supervised learning
-gwl_super = series_to_supervised(gwl_scaled, n_lags, n_ahead)
-gwl_super_values = gwl_super.values
-tide_super = series_to_supervised(tide_scaled, n_lags, n_ahead)
-tide_super_values = tide_super.values
-rain_super = series_to_supervised(rain_scaled, n_lags, n_ahead)
-rain_super_values = rain_super.values
-
-# split groundwater into inputs and labels
-gwl_input, gwl_labels = gwl_super_values[:, 0:n_lags+1], gwl_super_values[:, n_lags+1:]
+# split storm data into inputs and labels
+storm_values = storm_scaled[storm_scaled.columns[1:]].values
+storm_input, storm_labels = storm_values[:, :-18], storm_values[:, -18:]
 
 # split into train and test sets
-train_X = np.concatenate((gwl_input[:n_train, :], tide_super_values[:n_train, :], rain_super_values[:n_train, :]),
-                         axis=1)
-test_X = np.concatenate((gwl_input[n_train:, :], tide_super_values[n_train:, :], rain_super_values[n_train:, :]),
-                        axis=1)
-train_y, test_y = gwl_labels[:n_train, :], gwl_labels[n_train:, :]
+train_X, test_X = storm_input[:n_train, :], storm_input[n_train:, :]
+train_y, test_y = storm_labels[:n_train, :], storm_labels[n_train:, :]
 
 # reshape input to be 3D [samples, timesteps, features]
 train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
@@ -186,41 +188,46 @@ for j in np.arange(0, n_ahead - 1, 1):
 MAE_forecast = DataFrame(MAE_forecast)
 MAE_forecast.to_csv(os.path.join(path, file_num + "_MAE.csv"))
 
-# create dfs of timestamps, obs, and pred data to find peak values and times
-dates = DataFrame(test_dates[["Datetime"]][n_lags + 1:-n_ahead + 2])
-dates = dates.reset_index(inplace=False, drop=True)
-dates_9 = DataFrame(test_dates[["Datetime"]][n_lags + 9:-n_ahead + 10])
-dates_9 = dates_9.reset_index(inplace=False, drop=True)
-dates_18 = DataFrame(test_dates[["Datetime"]][n_lags + 18:])
-dates_18 = dates_18.reset_index(inplace=False, drop=True)
-
-obs_t1 = np.reshape(inv_y[:, 0], (inv_y.shape[0], 1))
-pred_t1 = np.reshape(inv_yhat[:, 0], (inv_y.shape[0], 1))
-df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
-df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
-df_t1 = pd.concat([df_t1, dates], axis=1)
-df_t1 = df_t1.set_index("Datetime")
-df_t1 = df_t1.rename(columns={'obs': 'Obs. GWL t+1', 'pred': 'Pred. GWL t+1'})
-
-obs_t9 = np.reshape(inv_y[:, 8], (inv_y.shape[0], 1))
-pred_t9 = np.reshape(inv_yhat[:, 8], (inv_y.shape[0], 1))
-df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
-df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
-df_t9 = pd.concat([df_t9, dates_9], axis=1)
-df_t9 = df_t9.set_index("Datetime")
-df_t9 = df_t9.rename(columns={'obs': 'Obs. GWL t+9', 'pred': 'Pred. GWL t+9'})
-
-obs_t18 = np.reshape(inv_y[:, 17], (inv_y.shape[0], 1))
-pred_t18 = np.reshape(inv_yhat[:, 17], (inv_y.shape[0], 1))
-df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
-df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
-df_t18 = pd.concat([df_t18, dates_18], axis=1)
-df_t18 = df_t18.set_index("Datetime")
-df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
-
 # combine prediction data with observations
 if file_num == "bs0":
-    test_dates = test_dates.set_index(pd.DatetimeIndex(test_dates['Datetime']))
-    all_data_df = pd.concat([test_dates, df_t1[['Pred. GWL t+1']], df_t9[['Pred. GWL t+9']],
-                             df_t18[['Pred. GWL t+18']]], axis=1)
+    test_dates_t1 = dataset[['Datetime', 'tide(t+1)', 'rain(t+1)']].iloc[n_train:]
+    test_dates_t1 = test_dates_t1.reset_index(drop=True)
+    test_dates_t1['Datetime'] = pd.to_datetime(test_dates_t1['Datetime'])
+    test_dates_t1['Datetime'] = test_dates_t1['Datetime'] + pd.DateOffset(hours=1)
+
+    test_dates_t9 = dataset[['Datetime', 'tide(t+9)', 'rain(t+9)']].iloc[n_train:]
+    test_dates_t9 = test_dates_t9.reset_index(drop=True)
+    test_dates_t9['Datetime'] = pd.to_datetime(test_dates_t9['Datetime'])
+    test_dates_t9['Datetime'] = test_dates_t9['Datetime'] + pd.DateOffset(hours=9)
+
+    test_dates_t18 = dataset[['Datetime', 'tide(t+18)', 'rain(t+18)']].iloc[n_train:]
+    test_dates_t18 = test_dates_t18.reset_index(drop=True)
+    test_dates_t18['Datetime'] = pd.to_datetime(test_dates_t18['Datetime'])
+    test_dates_t18['Datetime'] = test_dates_t18['Datetime'] + pd.DateOffset(hours=18)
+
+    obs_t1 = np.reshape(inv_y[:, 0], (inv_y.shape[0], 1))
+    pred_t1 = np.reshape(inv_yhat[:, 0], (inv_y.shape[0], 1))
+    df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
+    df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
+    df_t1 = pd.concat([df_t1, test_dates_t1], axis=1)
+    df_t1 = df_t1.set_index("Datetime")
+    df_t1 = df_t1.rename(columns={'obs': 'Obs. GWL t+1', 'pred': 'Pred. GWL t+1'})
+
+    obs_t9 = np.reshape(inv_y[:, 8], (inv_y.shape[0], 1))
+    pred_t9 = np.reshape(inv_yhat[:, 8], (inv_y.shape[0], 1))
+    df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
+    df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
+    df_t9 = pd.concat([df_t9, test_dates_t9], axis=1)
+    df_t9 = df_t9.set_index("Datetime")
+    df_t9 = df_t9.rename(columns={'obs': 'Obs. GWL t+9', 'pred': 'Pred. GWL t+9'})
+
+    obs_t18 = np.reshape(inv_y[:, 17], (inv_y.shape[0], 1))
+    pred_t18 = np.reshape(inv_yhat[:, 17], (inv_y.shape[0], 1))
+    df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
+    df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
+    df_t18 = pd.concat([df_t18, test_dates_t18], axis=1)
+    df_t18 = df_t18.set_index("Datetime")
+    df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
+
+    all_data_df = pd.concat([df_t1, df_t9, df_t18], axis=1)
     all_data_df.to_csv(os.path.join(path, file_num + "_all_data_df.csv"))

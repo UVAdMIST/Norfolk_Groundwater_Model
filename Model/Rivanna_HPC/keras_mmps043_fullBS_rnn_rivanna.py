@@ -62,9 +62,9 @@ dataset = read_csv(sys.argv[1])
 dataset = dataset[['Datetime', 'GWL', 'Tide', 'Precip.']]
 
 # load storm dataset to get indices for calculating performance on storms
-storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms/bs0.csv",
+storm_dataset = read_csv("/scratch/bdb3m/mmps043_bootstraps_storms_fixed/bs0.csv",
                          index_col="Datetime", parse_dates=True, infer_datetime_format=True,
-                         usecols=["Datetime", "GWL"])
+                         usecols=['Datetime', 'gwl(t+1)', 'gwl(t+9)', 'gwl(t+18)'])
 
 # configure network
 n_lags = 26
@@ -144,6 +144,7 @@ model.compile(loss=rmse, optimizer=adam)
 earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.00000001, patience=5, verbose=1, mode='auto')
 history = model.fit(train_X, train_y, batch_size=n_batch, epochs=n_epochs, verbose=2, shuffle=False,
                     callbacks=[earlystop])
+
 # make predictions
 trainPredict = model.predict(train_X)
 yhat = model.predict(test_X)
@@ -221,9 +222,18 @@ df_t18 = df_t18.set_index("Datetime")
 df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
 
 # extract storm dates from testset
-df_t1_storms = np.asarray(df_t1[~df_t1.index.isin(storm_dataset.index)])
-df_t9_storms = np.asarray(df_t9[~df_t9.index.isin(storm_dataset.index)])
-df_t18_storms = np.asarray(df_t18[~df_t18.index.isin(storm_dataset.index)])
+storm_dates_t1 = storm_dataset[['gwl(t+1)']]
+storm_dates_t1.index = storm_dates_t1.index + pd.DateOffset(hours=1)
+
+storm_dates_t9 = storm_dataset[['gwl(t+9)']]
+storm_dates_t9.index = storm_dates_t9.index + pd.DateOffset(hours=9)
+
+storm_dates_t18 = storm_dataset[['gwl(t+18)']]
+storm_dates_t18.index = storm_dates_t18.index + pd.DateOffset(hours=18)
+
+df_t1_storms = np.asarray(df_t1[df_t1.index.isin(storm_dates_t1.index)])
+df_t9_storms = np.asarray(df_t9[df_t9.index.isin(storm_dates_t9.index)])
+df_t18_storms = np.asarray(df_t18[df_t18.index.isin(storm_dates_t18.index)])
 
 storms_list = [df_t1_storms, df_t9_storms, df_t18_storms]
 
