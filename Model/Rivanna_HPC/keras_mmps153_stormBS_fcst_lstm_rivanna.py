@@ -1,157 +1,59 @@
 """
+Written by Benjamin Bowes, 10-23-2018
+
 Model: LSTM
-Data: storm data set, bootstrapped
-Run from shell script
+Train Data: storm data set, bootstrapped
+Test Data: bootstrapped and forecast data
+
 This network uses the last 25 observations of gwl, tide, and rain to predict the next 18
 values of gwl for well MMPS-153
 """
 
-import pandas as pd
-from pandas import DataFrame, concat, read_csv
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 import keras
-import keras.backend as K
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, CuDNNLSTM
+from keras.layers import Dense, Dropout, CuDNNLSTM
 from keras.regularizers import L1L2
-from math import sqrt
-import numpy as np
 import random as rn
 import os
 import sys
-
-
-# convert time series into supervised learning problem
-def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):
-    n_vars = 1 if type(data) is list else data.shape[1]
-    df = DataFrame(data)
-    cols, names = list(), list()
-    # input sequence (t-n, ... t-1)
-    for i in range(n_in, 0, -1):
-        cols.append(df.shift(i))
-        names += [('var%d(t-%d)' % (j+1, i)) for j in range(n_vars)]
-    # forecast sequence (t, t+1, ... t+n)
-    for i in range(0, n_out):
-        cols.append(df.shift(-i))
-        if i == 0:
-            names += [('var%d(t)' % (j+1)) for j in range(n_vars)]
-        else:
-            names += [('var%d(t+%d)' % (j+1, i)) for j in range(n_vars)]
-    # put it all together
-    agg = concat(cols, axis=1)
-    agg.columns = names
-    # drop rows with NaN values
-    if dropnan:
-        agg.dropna(inplace=True)
-    return agg
-
-
-def rmse(y_true, y_pred):
-    return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1))
-
+from .keras_utils import *
 
 # set base path
 file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
 bs_path = sys.argv[2]
 fcst_path = sys.argv[3]
 
-# load dataset
-dataset = read_csv(sys.argv[1])
-# dataset = read_csv("C:/Users/Ben Bowes/PycharmProjects/Tensorflow/mmps043_bootstraps_storms_fixed/bs0.csv")
-full_dataset = read_csv("/scratch/bdb3m/mmps153_bootstraps/bs0.csv", usecols=["Datetime", 'GWL', 'Tide', 'Precip.'])
-# dataset = dataset_raw.drop(dataset_raw.columns[[0, 3, 4, 5, 6]], axis=1)
+# load storm dataset
+storm_data = pd.read_csv(sys.argv[1])
+
+# full dataset is needed to create scaler
+full_data = pd.read_csv("/scratch/bdb3m/mmps153_bootstraps_shifted/bs0.csv", usecols=["Datetime", 'GWL', 'Tide', 'Precip.'])
 
 # load forecast test data
-fcst_data = pd.read_csv("/scratch/bdb3m/MMPS153_fcstdata_SI.csv")
+fcst_data = pd.read_csv("/scratch/bdb3m/MMPS153_fcstdata_shifted_SI.csv")
 
 # configure network
 n_lags = 25
 n_ahead = 19
 n_features = 3
-n_train = round(len(dataset)*0.7)
-n_test = len(dataset)-n_train
+if file_num == "bs0":
+    n_train = 17512
+else:
+    n_train = round(len(storm_data) * 0.7)
+n_test = len(storm_data) - n_train
 n_epochs = 10000
 n_neurons = 75
 n_batch = n_train
 
-values = full_dataset[['GWL', 'Tide', 'Precip.']].values
-values = values.astype('float32')
+# format observed data to get scalers
+_, _, tide_fit, rain_fit, gwl_fit, _, _, _, _ = format_obs_data(full_data, n_lags, n_ahead, n_train)
 
-gwl = values[:, 0]
-gwl = gwl.reshape(gwl.shape[0], 1)
+# format storm data
+train_X, test_X, train_y, test_y = format_storm_data(storm_data, n_train, tide_fit, rain_fit, gwl_fit)
 
-tide = values[:, 1]
-tide = tide.reshape(tide.shape[0], 1)
-
-rain = values[:, 2]
-rain = rain.reshape(rain.shape[0], 1)
-
-# normalize features with individual scalers
-gwl_scaler, tide_scaler, rain_scaler = MinMaxScaler(), MinMaxScaler(), MinMaxScaler()
-gwl_fit = gwl_scaler.fit(gwl)  # Compute the minimum and maximum gwl to be used for later scaling
-tide_fit = tide_scaler.fit(tide)
-rain_fit = rain_scaler.fit(rain)
-
-# separate storm data into gwl, tide, and rain
-storm_scaled = pd.DataFrame(dataset["Datetime"])
-for col in dataset.columns:
-    if col.split("(")[0] == "tide":
-        col_data = np.asarray(dataset[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = tide_fit.transform(col_data)
-        storm_scaled[col] = col_scaled
-    if col.split("(")[0] == "rain":
-        col_data = np.asarray(dataset[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = rain_fit.transform(col_data)
-        storm_scaled[col] = col_scaled
-    if col.split("(")[0] == "gwl":
-        col_data = np.asarray(dataset[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = gwl_fit.transform(col_data)
-        storm_scaled[col] = col_scaled
-
-# split storm data into inputs and labels
-storm_values = storm_scaled[storm_scaled.columns[1:]].values
-storm_input, storm_labels = storm_values[:, :-18], storm_values[:, -18:]
-
-# split into train and test sets
-train_X, test_X = storm_input[:n_train, :], storm_input[n_train:, :]
-train_y, test_y = storm_labels[:n_train, :], storm_labels[n_train:, :]
-
-# reshape input to be 3D [samples, timesteps, features]
-train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
-test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))
-print("training data:", train_X.shape, train_y.shape, test_X.shape, test_y.shape)
-
-# separate forecast data into gwl, tide, and rain
-fcst_scaled = pd.DataFrame(fcst_data["Datetime"])
-for col in fcst_data.columns:
-    if col.split("(")[0] == "tide":
-        col_data = np.asarray(fcst_data[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = tide_fit.transform(col_data)
-        fcst_scaled[col] = col_scaled
-    if col.split("(")[0] == "rain":
-        col_data = np.asarray(fcst_data[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = rain_fit.transform(col_data)
-        fcst_scaled[col] = col_scaled
-    if col.split("(")[0] == "gwl":
-        col_data = np.asarray(fcst_data[col])
-        col_data = col_data.reshape(col_data.shape[0], 1)
-        col_scaled = gwl_fit.transform(col_data)
-        fcst_scaled[col] = col_scaled
-
-# split fcst data into inputs and labels
-fcst_values = fcst_scaled[fcst_scaled.columns[1:]].values
-fcst_input, fcst_labels = fcst_values[:, :-18], fcst_values[:, -18:]
-
-# reshape fcst input to be 3D [samples, timesteps, features]
-fcst_test_X = fcst_input.reshape((fcst_input.shape[0], 1, fcst_input.shape[1]))
-print("testing data:", fcst_test_X.shape, fcst_labels.shape)
+# format forecast data
+fcst_test_X, fcst_labels = format_fcst_data(fcst_data, tide_fit, rain_fit, gwl_fit)
 
 # set random seeds for model reproducibility as suggested in:
 # https://keras.io/getting-started/faq/#how-can-i-obtain-reproducible-results-using-keras-during-development
@@ -178,171 +80,35 @@ history = model.fit(train_X, train_y, batch_size=n_batch, epochs=n_epochs, verbo
 
 # make predictions with bootstrap test data
 yhat = model.predict(test_X)
-inv_yhat = gwl_scaler.inverse_transform(yhat)
-inv_y = gwl_scaler.inverse_transform(test_y)
+inv_yhat = gwl_fit.inverse_transform(yhat)
+inv_y = gwl_fit.inverse_transform(test_y)
 
 # make predictions with forecast test data
 fcst_yhat = model.predict(fcst_test_X)
-inv_fcst_yhat = gwl_scaler.inverse_transform(fcst_yhat)
-inv_fcst_y = gwl_scaler.inverse_transform(fcst_labels)
+inv_fcst_yhat = gwl_fit.inverse_transform(fcst_yhat)
+inv_fcst_y = gwl_fit.inverse_transform(fcst_labels)
 
 # postprocess predictions to be <= land surface
 inv_yhat[inv_yhat > 3.24] = 3.24
 inv_fcst_yhat[inv_fcst_yhat > 3.24] = 3.24
 
-# calculate RMSE for bootstrap data
-RMSE_bootstrap = []
-for j in np.arange(0, n_ahead - 1, 1):
-    mse = mean_squared_error(inv_y[:, j], inv_yhat[:, j])
-    rmse = sqrt(mse)
-    RMSE_bootstrap.append(rmse)
-RMSE_bootstrap = DataFrame(RMSE_bootstrap)
-bs_rmse_avg = sqrt(mean_squared_error(inv_y, inv_yhat))
-print('Average bootstrap RMSE: %.3f' % bs_rmse_avg)
-RMSE_bootstrap.to_csv(os.path.join(bs_path, file_num + "_RMSE.csv"))
+# calc metrics for observed data
+rmse_obs, mae_obs, nse_obs = calc_metrics(inv_y, inv_yhat, n_ahead)
+rmse_obs.to_csv(os.path.join(bs_path, file_num + "_RMSE.csv"))
+nse_obs.to_csv(os.path.join(bs_path, file_num + "_NSE.csv"))
+mae_obs.to_csv(os.path.join(bs_path, file_num + "_MAE.csv"))
 
-# calculate RMSE for forecast data
-RMSE_forecast = []
-for j in np.arange(0, n_ahead - 1, 1):
-    mse = mean_squared_error(inv_fcst_y[:, j], inv_fcst_yhat[:, j])
-    rmse = sqrt(mse)
-    RMSE_forecast.append(rmse)
-RMSE_forecast = DataFrame(RMSE_forecast)
-fcst_rmse_avg = sqrt(mean_squared_error(inv_fcst_y, inv_fcst_yhat))
-print('Average forecast RMSE: %.3f' % fcst_rmse_avg)
-RMSE_forecast.to_csv(os.path.join(fcst_path, file_num + "_RMSE.csv"))
+# calc metrics for forecast data
+rmse_fcst, mae_fcst, nse_fcst = calc_metrics(inv_fcst_y, inv_fcst_yhat, n_ahead)
+rmse_fcst.to_csv(os.path.join(fcst_path, file_num + "_RMSE.csv"))
+nse_fcst.to_csv(os.path.join(fcst_path, file_num + "_NSE.csv"))
+mae_fcst.to_csv(os.path.join(fcst_path, file_num + "_MAE.csv"))
 
-# calculate NSE for bootstrap data
-NSE_bootstrap = []
-for j in np.arange(0, inv_yhat.shape[1], 1):
-    num_diff = np.subtract(inv_y[:, j], inv_yhat[:, j])
-    num_sq = np.square(num_diff)
-    numerator = sum(num_sq)
-    denom_diff = np.subtract(inv_y[:, j], np.mean(inv_y[:, j]))
-    denom_sq = np.square(denom_diff)
-    denominator = sum(denom_sq)
-    if denominator == 0:
-        nse = 'NaN'
-    else:
-        nse = 1 - (numerator / denominator)
-    NSE_bootstrap.append(nse)
-NSE_bootstrap = DataFrame(NSE_bootstrap)
-NSE_bootstrap.to_csv(os.path.join(bs_path, file_num + "_NSE.csv"))
-
-# calculate NSE for forecast data
-NSE_forecast = []
-for j in np.arange(0, inv_fcst_yhat.shape[1], 1):
-    num_diff = np.subtract(inv_fcst_y[:, j], inv_fcst_yhat[:, j])
-    num_sq = np.square(num_diff)
-    numerator = sum(num_sq)
-    denom_diff = np.subtract(inv_fcst_y[:, j], np.mean(inv_fcst_y[:, j]))
-    denom_sq = np.square(denom_diff)
-    denominator = sum(denom_sq)
-    if denominator == 0:
-        nse = 'NaN'
-    else:
-        nse = 1 - (numerator / denominator)
-    NSE_forecast.append(nse)
-NSE_forecast = DataFrame(NSE_forecast)
-NSE_forecast.to_csv(os.path.join(fcst_path, file_num + "_NSE.csv"))
-
-# calculate MAE for bootstrap data
-MAE_bootstrap = []
-for j in np.arange(0, n_ahead - 1, 1):
-    mae = np.sum(np.abs(np.subtract(inv_y[:, j], inv_yhat[:, j]))) / inv_y.shape[0]
-    MAE_bootstrap.append(mae)
-MAE_bootstrap = DataFrame(MAE_bootstrap)
-MAE_bootstrap.to_csv(os.path.join(bs_path, file_num + "_MAE.csv"))
-
-# calculate MAE for forecast data
-MAE_forecast = []
-for j in np.arange(0, n_ahead - 1, 1):
-    mae = np.sum(np.abs(np.subtract(inv_fcst_y[:, j], inv_fcst_yhat[:, j]))) / inv_fcst_y.shape[0]
-    MAE_forecast.append(mae)
-MAE_forecast = DataFrame(MAE_forecast)
-MAE_forecast.to_csv(os.path.join(fcst_path, file_num + "_MAE.csv"))
-
-# combine bootstrap prediction data with observations
 if file_num == "bs0":
-    test_dates_t1 = dataset[['Datetime', 'tide(t+1)', 'rain(t+1)']].iloc[n_train:]
-    test_dates_t1 = test_dates_t1.reset_index(drop=True)
-    test_dates_t1['Datetime'] = pd.to_datetime(test_dates_t1['Datetime'])
-    test_dates_t1['Datetime'] = test_dates_t1['Datetime'] + pd.DateOffset(hours=1)
+    # create df of storm observed data and predictions
+    all_data_df = storm_pred_df(storm_data, n_train, inv_y, inv_yhat)
+    all_data_df.to_csv(os.path.join(bs_path, file_num + "_all_data_df.csv"))
 
-    test_dates_t9 = dataset[['Datetime', 'tide(t+9)', 'rain(t+9)']].iloc[n_train:]
-    test_dates_t9 = test_dates_t9.reset_index(drop=True)
-    test_dates_t9['Datetime'] = pd.to_datetime(test_dates_t9['Datetime'])
-    test_dates_t9['Datetime'] = test_dates_t9['Datetime'] + pd.DateOffset(hours=9)
-
-    test_dates_t18 = dataset[['Datetime', 'tide(t+18)', 'rain(t+18)']].iloc[n_train:]
-    test_dates_t18 = test_dates_t18.reset_index(drop=True)
-    test_dates_t18['Datetime'] = pd.to_datetime(test_dates_t18['Datetime'])
-    test_dates_t18['Datetime'] = test_dates_t18['Datetime'] + pd.DateOffset(hours=18)
-
-    obs_t1 = np.reshape(inv_y[:, 0], (inv_y.shape[0], 1))
-    pred_t1 = np.reshape(inv_yhat[:, 0], (inv_y.shape[0], 1))
-    df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
-    df_t1 = DataFrame(df_t1, index=None, columns=["obs", "pred"])
-    df_t1 = pd.concat([df_t1, test_dates_t1], axis=1)
-    df_t1 = df_t1.set_index("Datetime")
-    df_t1 = df_t1.rename(columns={'obs': 'Obs. GWL t+1', 'pred': 'Pred. GWL t+1'})
-
-    obs_t9 = np.reshape(inv_y[:, 8], (inv_y.shape[0], 1))
-    pred_t9 = np.reshape(inv_yhat[:, 8], (inv_y.shape[0], 1))
-    df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
-    df_t9 = DataFrame(df_t9, index=None, columns=["obs", "pred"])
-    df_t9 = pd.concat([df_t9, test_dates_t9], axis=1)
-    df_t9 = df_t9.set_index("Datetime")
-    df_t9 = df_t9.rename(columns={'obs': 'Obs. GWL t+9', 'pred': 'Pred. GWL t+9'})
-
-    obs_t18 = np.reshape(inv_y[:, 17], (inv_y.shape[0], 1))
-    pred_t18 = np.reshape(inv_yhat[:, 17], (inv_y.shape[0], 1))
-    df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
-    df_t18 = DataFrame(df_t18, index=None, columns=["obs", "pred"])
-    df_t18 = pd.concat([df_t18, test_dates_t18], axis=1)
-    df_t18 = df_t18.set_index("Datetime")
-    df_t18 = df_t18.rename(columns={'obs': 'Obs. GWL t+18', 'pred': 'Pred. GWL t+18'})
-
-    all_bs_data_df = pd.concat([df_t1, df_t9, df_t18], axis=1)
-    all_bs_data_df.to_csv(os.path.join(bs_path, file_num + "_all_data_df.csv"))
-
-# combine forecast prediction data with observations
-if file_num == "bs0":
-    test_dates_t1 = fcst_data[['Datetime', 'tide(t+1)', 'rain(t+1)']]
-    test_dates_t1 = test_dates_t1.reset_index(drop=True)
-    test_dates_t1['Datetime'] = pd.to_datetime(test_dates_t1['Datetime'])
-    test_dates_t1['Datetime'] = test_dates_t1['Datetime'] + pd.DateOffset(hours=1)
-
-    test_dates_t9 = fcst_data[['Datetime', 'tide(t+9)', 'rain(t+9)']]
-    test_dates_t9 = test_dates_t9.reset_index(drop=True)
-    test_dates_t9['Datetime'] = pd.to_datetime(test_dates_t9['Datetime'])
-    test_dates_t9['Datetime'] = test_dates_t9['Datetime'] + pd.DateOffset(hours=9)
-
-    test_dates_t18 = fcst_data[['Datetime', 'tide(t+18)', 'rain(t+18)']]
-    test_dates_t18 = test_dates_t18.reset_index(drop=True)
-    test_dates_t18['Datetime'] = pd.to_datetime(test_dates_t18['Datetime'])
-    test_dates_t18['Datetime'] = test_dates_t18['Datetime'] + pd.DateOffset(hours=18)
-
-    obs_t1 = np.reshape(inv_fcst_y[:, 0], (inv_fcst_y.shape[0], 1))
-    pred_t1 = np.reshape(inv_fcst_yhat[:, 0], (inv_fcst_y.shape[0], 1))
-    df_t1 = np.concatenate([obs_t1, pred_t1], axis=1)
-    df_t1 = DataFrame(df_t1, index=None, columns=["Obs. GWL t+1", "Pred. GWL t+1"])
-    df_t1 = pd.concat([df_t1, test_dates_t1], axis=1)
-    df_t1 = df_t1.set_index("Datetime")
-
-    obs_t9 = np.reshape(inv_fcst_y[:, 8], (inv_fcst_y.shape[0], 1))
-    pred_t9 = np.reshape(inv_fcst_yhat[:, 8], (inv_fcst_y.shape[0], 1))
-    df_t9 = np.concatenate([obs_t9, pred_t9], axis=1)
-    df_t9 = DataFrame(df_t9, index=None, columns=["Obs. GWL t+9", "Pred. GWL t+9"])
-    df_t9 = pd.concat([df_t9, test_dates_t9], axis=1)
-    df_t9 = df_t9.set_index("Datetime")
-
-    obs_t18 = np.reshape(inv_fcst_y[:, 17], (inv_fcst_y.shape[0], 1))
-    pred_t18 = np.reshape(inv_fcst_yhat[:, 17], (inv_fcst_y.shape[0], 1))
-    df_t18 = np.concatenate([obs_t18, pred_t18], axis=1)
-    df_t18 = DataFrame(df_t18, index=None, columns=["Obs. GWL t+18", "Pred. GWL t+18"])
-    df_t18 = pd.concat([df_t18, test_dates_t18], axis=1)
-    df_t18 = df_t18.set_index("Datetime")
-
-    all_fcst_data_df = pd.concat([df_t1, df_t9, df_t18], axis=1)
+    # create df of forecast data and predictions
+    all_fcst_data_df = fcst_pred_df(fcst_data, inv_fcst_y, inv_fcst_yhat)
     all_fcst_data_df.to_csv(os.path.join(fcst_path, file_num + "_all_fcst_data_df.csv"))
