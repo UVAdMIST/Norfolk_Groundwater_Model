@@ -22,9 +22,15 @@ The modeling process has been broken into three steps: preprocessing, modeling, 
 The main model dependencies used are:
 - Tensorflow
 - Keras
-- sklearn
-- Pandas
-- Numpy
+- Scikit-Learn
+
+# Authors
+- Ben Bowes
+- Jeff Sadler
+- Mohamed Morsy
+
+## License
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
 # Useful Links
 - [The Unreasonable Effectiveness of Recurrent Neural Networks](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) - A great blog post by Andrea Karpathy explaining what RNNs are and why they work so well.
