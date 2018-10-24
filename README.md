@@ -6,11 +6,11 @@ This repository contains scripts to model and forecast the groundwater table lev
 
 # Model Dependencies
 The main model dependencies used are:
--[Tensorflow]
--[Keras]
--[sklearn]
--[Pandas]
--[Numpy]
+- [Tensorflow]
+- [Keras]
+- [sklearn]
+- [Pandas]
+- [Numpy]
 
 # Useful Links
 - [RNN article](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) - A great blog post by Andrea Karpathy explaining what RNNs are and why they work so well.
