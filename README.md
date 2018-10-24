@@ -30,7 +30,7 @@ The main model dependencies used are:
 - Mohamed Morsy
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/UVAdMIST/Norfolk_Groundwater_Model/blob/master/LICENSE) file for details
 
 # Useful Links
 - [The Unreasonable Effectiveness of Recurrent Neural Networks](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) - A great blog post by Andrea Karpathy explaining what RNNs are and why they work so well.
