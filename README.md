@@ -1,5 +1,5 @@
 # Norfolk_Groundwater_Model
-This repository contains scripts to model and forecast the groundwater table level in Norfolk, Virginia using Long Short-term Memory and Recurrent neural networks. These models are created with Tensorflow and Keras and run on a HPC with an Nvidia p100 GPU. The modeling process has been broken into three steps: preprocessing, modeling, and post-processing.
+This repository contains scripts to model and forecast the groundwater table level in Norfolk, Virginia using Long Short-term Memory and Recurrent neural networks. These models are created with Tensorflow and Keras and run on a HPC with a GPU. The modeling process has been broken into three steps: preprocessing, modeling, and post-processing.
 
 # Project Motivation
 There is a need for accurate forecasts of groundwater table as part of flood prediction in coastal urban areas because:
