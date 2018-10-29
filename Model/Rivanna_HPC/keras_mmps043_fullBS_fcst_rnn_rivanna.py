@@ -15,7 +15,9 @@ from keras.regularizers import L1L2
 import random as rn
 import os
 import sys
-from .keras_utils import *
+sys.path.insert(0, '/scratch/bdb3m')
+import keras_utils
+from keras_utils import *
 
 # set base path
 file_num = str(sys.argv[1]).split("/")[4].split(".")[0]

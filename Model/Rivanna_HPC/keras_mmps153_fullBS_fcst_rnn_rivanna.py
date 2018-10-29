@@ -16,7 +16,9 @@ from keras.regularizers import L1L2
 import random as rn
 import os
 import sys
-from .keras_utils import *
+sys.path.insert(0, '/scratch/bdb3m')
+import keras_utils
+from keras_utils import *
 
 # set base path
 file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
@@ -29,12 +31,12 @@ full_data = pd.read_csv(sys.argv[1])
 full_data = full_data[['Datetime', 'GWL', 'Tide', 'Precip.']]
 
 # load storm dataset to get indices for calculating performance on storms
-storm_data = pd.read_csv("/scratch/bdb3m/mmps153_bootstraps_storms_shifted/bs0.csv",
+storm_data = pd.read_csv("/scratch/bdb3m/mmps153_bootstraps_storms_fixed/bs0.csv",
                          index_col="Datetime", parse_dates=True, infer_datetime_format=True,
                          usecols=['Datetime', 'gwl(t+1)', 'gwl(t+9)', 'gwl(t+18)'])
 
 # load forecast test data
-fcst_data = pd.read_csv("/scratch/bdb3m/MMPS153_fcstdata_shifted_SI.csv")
+fcst_data = pd.read_csv("/scratch/bdb3m/MMPS153_fcstdata_SI.csv")
 
 # configure network
 n_lags = 25
@@ -88,17 +90,6 @@ inv_fcst_y = gwl_fit.inverse_transform(fcst_labels)
 # postprocess predictions to be <= land surface
 inv_yhat[inv_yhat > 3.24] = 3.24
 inv_fcst_yhat[inv_fcst_yhat > 3.24] = 3.24
-
-# calculate RMSE for bootstrap data
-RMSE_bootstrap = []
-for j in np.arange(0, n_ahead - 1, 1):
-    mse = mean_squared_error(inv_y[:, j], inv_yhat[:, j])
-    rmse = sqrt(mse)
-    RMSE_bootstrap.append(rmse)
-RMSE_bootstrap = DataFrame(RMSE_bootstrap)
-bs_rmse_avg = sqrt(mean_squared_error(inv_y, inv_yhat))
-print('Average bootstrap RMSE: %.3f' % bs_rmse_avg)
-RMSE_bootstrap.to_csv(os.path.join(bs_path, file_num + "_RMSE.csv"))
 
 # calc metrics for observed data
 rmse_obs, mae_obs, nse_obs = calc_metrics(inv_y, inv_yhat, n_ahead)

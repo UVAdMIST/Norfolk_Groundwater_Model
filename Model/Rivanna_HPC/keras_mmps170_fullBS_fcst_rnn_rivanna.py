@@ -16,7 +16,9 @@ from keras.regularizers import L1L2
 import random as rn
 import os
 import sys
-from .keras_utils import *
+sys.path.insert(0, '/scratch/bdb3m')
+import keras_utils
+from keras_utils import *
 
 # set base path
 file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
@@ -29,12 +31,12 @@ full_data = pd.read_csv(sys.argv[1])
 full_data = full_data[['Datetime', 'GWL', 'Tide', 'Precip.']]
 
 # load storm dataset to get indices for calculating performance on storms
-storm_data = pd.read_csv("/scratch/bdb3m/mmps170_bootstraps_storms_shifted/bs0.csv",
+storm_data = pd.read_csv("/scratch/bdb3m/mmps170_bootstraps_storms_fixed/bs0.csv",
                          index_col="Datetime", parse_dates=True, infer_datetime_format=True,
                          usecols=['Datetime', 'gwl(t+1)', 'gwl(t+9)', 'gwl(t+18)'])
 
 # load forecast test data
-fcst_data = pd.read_csv("/scratch/bdb3m/MMPS170_fcstdata_shifted_SI.csv")
+fcst_data = pd.read_csv("/scratch/bdb3m/MMPS170_fcstdata_SI.csv")
 
 # configure network
 n_lags = 48
