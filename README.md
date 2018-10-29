@@ -16,7 +16,7 @@ There is a need for accurate forecasts of groundwater table as part of flood pre
 
 ## Workflow
 The modeling process has been broken into three steps: preprocessing, modeling, and post-processing.
-![alt-tag](https://github.com/UVAdMIST/Norfolk_Groundwater_Model/blob/master/Norfolk_GWL_Workflow.png)
+![alt-tag](https://github.com/UVAdMIST/Norfolk_Groundwater_Model/blob/master/Norfolk_GWL_workflow.png)
 
 ## Model Dependencies
 The main model dependencies used are:
