@@ -17,7 +17,7 @@ import os
 import sys
 sys.path.insert(0, '/scratch/bdb3m')
 import keras_utils
-from keras_utils import *
+from keras_utils import format_obs_data, format_fcst_data, calc_metrics, full_pred_df, calc_metrics_fulldata_on_storms, fcst_pred_df
 
 # set base path
 file_num = str(sys.argv[1]).split("/")[4].split(".")[0]
